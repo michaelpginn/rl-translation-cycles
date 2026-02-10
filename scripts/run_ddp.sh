@@ -2,7 +2,7 @@
 #SBATCH --gres=gpu:a100:3
 #SBATCH --ntasks-per-node=3
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=256G
+#SBATCH --mem=128G
 #SBATCH --time=7-00:00:00
 #SBATCH --output=logs/%j.log
 #SBATCH --job-name=rltc-ddp
@@ -10,6 +10,7 @@
 #SBATCH --account=blanca-curc-gpu
 #SBATCH --qos=blanca-curc-gpu
 
+module load uv
 cd "$SLURM_SUBMIT_DIR"
 
 export MASTER_PORT=$((10000 + SLURM_JOB_ID % 50000))
