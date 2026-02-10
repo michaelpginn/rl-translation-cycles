@@ -15,6 +15,9 @@ dependencies = [
     "wandb>=0.24.2",
 ]
 
+[project.optional-dependencies]
+cuda = ["flash-attn>=2.5.0"]
+
 [dependency-groups]
 dev = [
     "mypy>=1.19.1",

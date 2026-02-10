@@ -12,6 +12,7 @@
 
 module load uv
 cd "$SLURM_SUBMIT_DIR"
+uv sync --extra cuda
 
 export MASTER_PORT=$((10000 + SLURM_JOB_ID % 50000))
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)

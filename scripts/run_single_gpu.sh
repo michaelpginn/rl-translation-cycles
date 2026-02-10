@@ -11,4 +11,5 @@
 #SBATCH --qos=blanca-curc-gpu
 
 cd "$SLURM_SUBMIT_DIR"
+uv sync --extra cuda
 uv run python run.py "$1" "${@:2}"
