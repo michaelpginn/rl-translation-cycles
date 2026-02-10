@@ -6,6 +6,9 @@
 #SBATCH --time=7-00:00:00
 #SBATCH --output=logs/%j.log
 #SBATCH --job-name=rltc-ddp
+#SBATCH --partition=blanca-curc-gpu
+#SBATCH --account=blanca-curc-gpu
+#SBATCH --qos=blanca-curc-gpu
 
 cd "$SLURM_SUBMIT_DIR"
 

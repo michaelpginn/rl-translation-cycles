@@ -6,6 +6,9 @@
 #SBATCH --time=2-00:00:00
 #SBATCH --output=logs/%j.log
 #SBATCH --job-name=rltc
+#SBATCH --partition=blanca-curc-gpu
+#SBATCH --account=blanca-curc-gpu
+#SBATCH --qos=blanca-curc-gpu
 
 cd "$SLURM_SUBMIT_DIR"
 uv run python run.py "$1" "${@:2}"
