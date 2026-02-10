@@ -10,6 +10,7 @@
 #SBATCH --account=blanca-curc-gpu
 #SBATCH --qos=blanca-curc-gpu
 
+module load uv
 cd "$SLURM_SUBMIT_DIR"
 uv sync --extra cuda
 uv run python run.py "$1" "${@:2}"
