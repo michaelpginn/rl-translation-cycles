@@ -1,11 +1,11 @@
 #!/bin/bash
-# Run this on the login node (with internet) to pre-download all datasets.
+# Run this on the login node to pre-download all datasets and model weights.
 # After this, SLURM jobs can run with HF_DATASETS_OFFLINE=1.
 
 set -e
 
-module load uv
 cd "$(dirname "$0")/.."
+module load uv 2>/dev/null || true
 uv sync
 
 echo "=== Downloading and caching FineWeb training sentences ==="

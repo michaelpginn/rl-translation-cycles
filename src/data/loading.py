@@ -65,8 +65,7 @@ class FineWebTrainDataset(Dataset):  # type: ignore[type-arg]
             ds = load_dataset(
                 config.train_dataset,
                 name=config.train_dataset_subset,
-                split="train",
-                streaming=True,
+                split=f"train[:{config.train_num_sentences * 2}]",
             )
             sentences: list[str] = []
             for example in ds:
