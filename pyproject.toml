@@ -1,0 +1,28 @@
+[project]
+name = "rl-translation-cycles"
+version = "0.1.0"
+description = "GRPO training for low-resource translation via cycle consistency"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "accelerate>=1.12.0",
+    "datasets>=2.14,<4",
+    "peft>=0.18.1",
+    "sacrebleu>=2.6.0",
+    "torch>=2.10.0",
+    "tqdm>=4.67.3",
+    "transformers>=5.1.0",
+    "wandb>=0.24.2",
+]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.19.1",
+    "types-tqdm>=4.67.3.20260205",
+]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+check_untyped_defs = true
+disallow_untyped_defs = false
