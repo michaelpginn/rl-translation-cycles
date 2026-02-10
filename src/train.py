@@ -51,12 +51,16 @@ def run_train(config: ExperimentConfig, rank: int = 0, world_size: int = 1) -> N
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    try:
+        import flash_attn  # noqa: F401
+        attn_impl = "flash_attention_2"
+    except ImportError:
+        attn_impl = "eager"
+
     model: Any = AutoModelForCausalLM.from_pretrained(
         config.pretrained_model,
         dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2"
-        if torch.cuda.is_available()
-        else "eager",
+        attn_implementation=attn_impl,
     )
     model = model.to(device)
 

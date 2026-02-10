@@ -12,7 +12,8 @@
 
 module load uv
 cd "$SLURM_SUBMIT_DIR"
-uv sync --extra cuda
+uv sync
+uv pip install flash-attn --no-build-isolation 2>/dev/null || echo "flash-attn install skipped"
 
 export MASTER_PORT=$((10000 + SLURM_JOB_ID % 50000))
 export MASTER_ADDR=$(scontrol show hostnames "$SLURM_JOB_NODELIST" | head -n 1)
