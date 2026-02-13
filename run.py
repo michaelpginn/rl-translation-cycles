@@ -6,14 +6,14 @@ import argparse
 import logging
 from typing import Any
 
+import torch
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+import wandb
 from src.config import ExperimentConfig, config_to_dataclass
 from src.distributed import cleanup_distributed, setup_distributed
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="\033[90m%(asctime)s \033[36m[%(levelname)s] \033[1;33m%(module)s\033[0m: %(message)s",
-)
-logger = logging.getLogger(__name__)
+from src.evaluate import evaluate
+from src.train import train
 
 
 def main() -> None:
@@ -32,41 +32,59 @@ def main() -> None:
         default=[],
         help="Config overrides as key=value pairs",
     )
+    parser.add_argument("--debug", action="store_true")
     args = parser.parse_args()
 
-    config = config_to_dataclass(args.config, args.overrides, ExperimentConfig)
-    rank, world_size = setup_distributed()
+    logging.basicConfig(
+        level=logging.DEBUG if args.debug else logging.INFO,
+        format="\033[90m%(asctime)s \033[36m[%(levelname)s] \033[1;33m%(module)s\033[0m: %(message)s",
+    )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logger = logging.getLogger(__name__)
 
-    if rank == 0:
+    config = config_to_dataclass(args.config, args.overrides, ExperimentConfig)
+    dist_config = setup_distributed()
+
+    if dist_config.is_main:
         logger.info(f"Config: {config}")
         logger.info(f"Mode: {config.mode}")
+        wandb.init(
+            project=config.wandb_project,
+            name=config.wandb_run_name,
+            config=vars(config),
+        )
 
     try:
-        if config.mode == "train":
-            from src.train import run_train
+        tokenizer = AutoTokenizer.from_pretrained(
+            config.pretrained_model, padding_side="left"
+        )
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        try:
+            import flash_attn  # noqa: F401 # type:ignore
 
-            run_train(config, rank, world_size)
-        elif config.mode == "eval":
-            import torch
-            from transformers import AutoModelForCausalLM, AutoTokenizer
-
-            from src.evaluation.evaluate import run_eval
-
-            tokenizer = AutoTokenizer.from_pretrained(config.pretrained_model)
-            if tokenizer.pad_token is None:
-                tokenizer.pad_token = tokenizer.eos_token
-            model: Any = AutoModelForCausalLM.from_pretrained(
-                config.pretrained_model,
-                dtype=torch.bfloat16,
+            attn_impl = "flash_attention_2"
+        except ImportError:
+            attn_impl = "eager"
+        model: Any = AutoModelForCausalLM.from_pretrained(
+            config.pretrained_model,
+            dtype=torch.bfloat16,
+            attn_implementation=attn_impl,
+        )
+        model = model.to(dist_config.device)
+        if dist_config.distributed:
+            logger.info("Wrapping model in DDP")
+            model = torch.nn.parallel.DistributedDataParallel(
+                model, device_ids=[dist_config.local_rank]
             )
-            if torch.cuda.is_available():
-                model = model.cuda()
-            model.eval()
-            metrics = run_eval(model, tokenizer, config, rank, world_size)
-            if rank == 0:
-                import json
 
-                logger.info(f"Evaluation results:\n{json.dumps(metrics, indent=2)}")
+        if config.mode == "train":
+            train(model, tokenizer, config, dist_config)
+        elif config.mode == "eval":
+            metrics = evaluate(model, tokenizer, config, dist_config)
+            if dist_config.is_main:
+                wandb.log({"eval": metrics})
         else:
             raise ValueError(f"Unknown mode: {config.mode}")
     finally:

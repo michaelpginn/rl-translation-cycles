@@ -7,6 +7,8 @@ from typing import Any
 
 import torch
 
+from src.modeling.mem_profile import log_mem
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,12 +21,11 @@ def sample_completions(
     max_new_tokens: int,
     temperature: float,
     top_p: float,
-) -> tuple[list[list[str]], torch.Tensor, torch.Tensor]:
+) -> tuple[list[list[str]], torch.Tensor]:
     """Sample multiple completions for each prompt.
 
     Returns:
         texts: list of list of decoded strings, shape [batch, num_samples]
-        all_log_probs: padded log-prob tensor, shape [batch * num_samples, max_len]
         all_token_ids: padded token id tensor, shape [batch * num_samples, max_len]
     """
     # Repeat each prompt num_samples times
@@ -41,6 +42,7 @@ def sample_completions(
 
     prompt_len = inputs.input_ids.shape[1]
 
+    log_mem("sample_completions_before_generate")
     outputs = model.generate(
         **inputs,
         max_new_tokens=max_new_tokens,
@@ -48,23 +50,12 @@ def sample_completions(
         temperature=temperature,
         top_p=top_p,
         return_dict_in_generate=True,
-        output_scores=True,
+        stop_strings=["\n"],
+        tokenizer=tokenizer,
     )
+    log_mem("sample_completions_after_generate")
 
     generated_ids = outputs.sequences[:, prompt_len:]
-    # Compute per-token log probs from scores
-    all_log_probs = []
-    for step_scores in outputs.scores:
-        log_probs = torch.log_softmax(step_scores, dim=-1)
-        all_log_probs.append(log_probs)
-
-    # Stack: [batch * num_samples, seq_len, vocab]
-    log_probs_stack = torch.stack(all_log_probs, dim=1)
-
-    # Gather the log probs of the actually generated tokens
-    token_log_probs = log_probs_stack.gather(
-        2, generated_ids.unsqueeze(-1)
-    ).squeeze(-1)
 
     # Decode texts
     decoded = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
@@ -73,7 +64,7 @@ def sample_completions(
         batch_texts = decoded[i * num_samples : (i + 1) * num_samples]
         texts.append([t.strip() for t in batch_texts])
 
-    return texts, token_log_probs, generated_ids
+    return texts, generated_ids
 
 
 @torch.no_grad()  # type: ignore[misc]
@@ -90,15 +81,14 @@ def greedy_decode(
         padding=True,
         truncation=True,
     ).to(model.device)
-
     prompt_len = inputs.input_ids.shape[1]
-
     outputs = model.generate(
         **inputs,
         max_new_tokens=max_new_tokens,
         do_sample=False,
+        stop_strings=["\n"],
+        tokenizer=tokenizer,
     )
-
     generated_ids = outputs[:, prompt_len:]
     decoded = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
     return [t.strip() for t in decoded]

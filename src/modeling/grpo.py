@@ -6,10 +6,10 @@ import logging
 from typing import Any
 
 import torch
-import torch.nn.functional as F
 
 from src.config.experiment_config import ExperimentConfig
 from src.modeling.generation import sample_completions
+from src.modeling.mem_profile import log_mem
 from src.modeling.prompts import make_backward_prompt, make_forward_prompt
 from src.modeling.rewards import compute_cycle_rewards
 
@@ -22,11 +22,10 @@ def _compute_grpo_loss(
     tokenizer: Any,
     prompts: list[str],
     completions: list[str],
-    rewards: torch.Tensor,
-    beta: float,
-    max_tokens: int,
+    advantages: torch.Tensor,
+    config: ExperimentConfig,
 ) -> torch.Tensor:
-    """Compute the GRPO policy gradient loss for a batch.
+    """Compute the DAPO policy gradient loss for a batch.
 
     Uses sentence-level rewards distributed evenly over completion tokens.
 
@@ -36,7 +35,7 @@ def _compute_grpo_loss(
         tokenizer: tokenizer
         prompts: list of prompt strings
         completions: list of completion strings
-        rewards: [batch_size] tensor of rewards
+        flat_fwd_advantages: [batch_size] tensor of *normalized* rewards
         beta: KL penalty coefficient
         max_tokens: max sequence length
 
@@ -50,68 +49,56 @@ def _compute_grpo_loss(
         return_tensors="pt",
         padding=True,
         truncation=True,
-        max_length=max_tokens,
+        max_length=config.max_tokens,
     ).to(model.device)
-
-    # Get prompt lengths to mask prompt tokens from loss
-    prompt_encodings = tokenizer(
-        prompts,
-        return_tensors="pt",
-        padding=True,
-        truncation=True,
-        max_length=max_tokens,
+    prompt_lengths = (
+        tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=config.max_tokens,
+        )
+        .attention_mask.sum(dim=-1)
+        .to(model.device)
     )
-    prompt_lengths = prompt_encodings.attention_mask.sum(dim=1).to(model.device)
+    completion_lengths = encodings.attention_mask.sum(dim=-1) - prompt_lengths
+    labels = encodings.input_ids[:, 1:]
+    mask = encodings.attention_mask[:, 1:]
+    mask *= torch.arange(labels.size(-1), device=labels.device).unsqueeze(
+        0
+    ) >= labels.size(-1) - completion_lengths.unsqueeze(1)
 
-    # Forward pass through policy and reference
-    with torch.no_grad():
-        ref_outputs = ref_model(**encodings)
-        ref_logits = ref_outputs.logits
+    # Compute prob ratio (first term)
+    log_mem(f"grpo_loss_before_policy_fwd (n_seqs={len(prompts)})")
+    logger.debug(f"Size of inputs: {encodings.input_ids.shape}")
+    policy_logprobs = (
+        torch.log_softmax(model(**encodings).logits, dim=-1)
+        .gather(dim=-1, index=labels.unsqueeze(-1))
+        .squeeze(-1)
+    )
+    log_mem("grpo_loss_after_policy_fwd")
+    policy_probs = torch.exp(
+        policy_logprobs - policy_logprobs.detach()
+    ) * advantages.unsqueeze(1)
 
-    policy_outputs = model(**encodings)
-    policy_logits = policy_outputs.logits
-
-    # Shift for next-token prediction
-    shift_logits = policy_logits[:, :-1, :]
-    shift_ref_logits = ref_logits[:, :-1, :]
-    shift_labels = encodings.input_ids[:, 1:]
-    shift_mask = encodings.attention_mask[:, 1:]
-
-    # Log probs
-    policy_log_probs = F.log_softmax(shift_logits, dim=-1)
-    ref_log_probs = F.log_softmax(shift_ref_logits, dim=-1)
-
-    # Gather log probs of actual tokens
-    policy_token_lp = policy_log_probs.gather(
-        2, shift_labels.unsqueeze(-1)
-    ).squeeze(-1)
-    ref_token_lp = ref_log_probs.gather(2, shift_labels.unsqueeze(-1)).squeeze(-1)
-
-    # Create completion mask (1 for completion tokens, 0 for prompt/padding)
-    batch_size, seq_len = shift_labels.shape
-    positions = torch.arange(seq_len, device=model.device).unsqueeze(0).expand(batch_size, -1)
-    completion_mask = (positions >= (prompt_lengths.unsqueeze(1) - 1)) & (shift_mask == 1)
-    completion_mask = completion_mask.float()
-
-    # Normalize rewards within group (GRPO: subtract mean, divide by std)
-    if rewards.numel() > 1 and rewards.std() > 0:
-        norm_rewards = (rewards - rewards.mean()) / (rewards.std() + 1e-8)
+    # Compute kl divergence (second term)
+    if config.grpo_beta > 0:
+        with torch.no_grad():
+            ref_logprobs = (
+                torch.log_softmax(ref_model(**encodings).logits, dim=-1)
+                .gather(dim=-1, index=labels.unsqueeze(-1))
+                .squeeze(-1)
+                .detach()
+            )
+        log_mem("grpo_loss_after_ref_fwd")
+        log_ref_ratio = policy_logprobs - ref_logprobs
+        kl_divergence = torch.exp(log_ref_ratio) - log_ref_ratio - 1
+        token_level_loss = -(policy_probs - config.grpo_beta * kl_divergence)
     else:
-        norm_rewards = rewards - rewards.mean()
-    norm_rewards = norm_rewards.to(model.device)
-
-    # Per-token advantage: sentence-level reward distributed evenly
-    num_completion_tokens = completion_mask.sum(dim=1, keepdim=True).clamp(min=1)
-    per_token_reward = (norm_rewards.unsqueeze(1) * completion_mask) / num_completion_tokens
-
-    # Policy gradient loss: -E[advantage * log_prob]
-    pg_loss = -(per_token_reward * policy_token_lp * completion_mask).sum() / completion_mask.sum().clamp(min=1)
-
-    # KL penalty: D_KL(policy || ref) per token
-    kl_div = (policy_token_lp - ref_token_lp) * completion_mask
-    kl_loss = beta * kl_div.sum() / completion_mask.sum().clamp(min=1)
-
-    return pg_loss + kl_loss
+        token_level_loss = -policy_probs
+    loss = (token_level_loss * mask).sum() / mask.sum()
+    return loss
 
 
 def run_grpo_step(
@@ -119,7 +106,6 @@ def run_grpo_step(
     ref_model: Any,
     tokenizer: Any,
     english_sentences: list[str],
-    target_lang: str,
     config: ExperimentConfig,
 ) -> dict:
     """Run one GRPO step on a batch of English sentences.
@@ -141,19 +127,22 @@ def run_grpo_step(
     Returns:
         dict with 'loss' tensor and various metrics
     """
-    g = config.grpo_group_size
     batch_size = len(english_sentences)
 
     # Step 1: Forward translation (eng -> target)
-    fwd_prompts = [
-        make_forward_prompt(s, target_lang) for s in english_sentences
-    ]
-    fwd_texts, fwd_log_probs, fwd_token_ids = sample_completions(
-        model, tokenizer, fwd_prompts, g,
-        max_new_tokens=config.max_tokens,
-        temperature=config.grpo_temperature,
-        top_p=config.grpo_top_p,
-    )
+    log_mem("grpo_step_start")
+    fwd_prompts = [make_forward_prompt(s, config.language) for s in english_sentences]
+    with torch.no_grad():
+        fwd_texts, _ = sample_completions(
+            model,
+            tokenizer,
+            prompts=fwd_prompts,
+            num_samples=config.grpo_group_size,
+            max_new_tokens=config.max_tokens,
+            temperature=config.grpo_temperature,
+            top_p=config.grpo_top_p,
+        )
+    log_mem("after_fwd_generation")
 
     # Step 2: Back translation (target -> eng) for each forward candidate
     all_back_texts = []  # [batch, g_fwd, g_bwd]
@@ -161,51 +150,77 @@ def run_grpo_step(
     all_bwd_completions = []
 
     for i in range(batch_size):
-        batch_back = []
-        for j in range(g):
-            bwd_prompt = make_backward_prompt(fwd_texts[i][j], target_lang)
-            bwd_texts_ij, _, _ = sample_completions(
-                model, tokenizer, [bwd_prompt], g,
-                max_new_tokens=config.max_tokens,
-                temperature=config.grpo_temperature,
-                top_p=config.grpo_top_p,
-            )
-            batch_back.append(bwd_texts_ij[0])  # g back translations
-            all_bwd_prompts.extend([bwd_prompt] * g)
+        group_back = []
+        for j in range(config.grpo_group_size):
+            bwd_prompt = make_backward_prompt(fwd_texts[i][j], config.language)
+            with torch.no_grad():
+                bwd_texts_ij, _ = sample_completions(
+                    model,
+                    tokenizer,
+                    prompts=[bwd_prompt],
+                    num_samples=config.grpo_group_size,
+                    max_new_tokens=config.max_tokens,
+                    temperature=config.grpo_temperature,
+                    top_p=config.grpo_top_p,
+                )
+            group_back.append(bwd_texts_ij[0])  # g back translations
+            all_bwd_prompts.extend([bwd_prompt] * config.grpo_group_size)
             all_bwd_completions.extend(bwd_texts_ij[0])
-        all_back_texts.append(batch_back)
+            log_mem(f"after_bwd_generation_i{i}_j{j}")
+        all_back_texts.append(group_back)
 
     # Step 3: Compute rewards
     forward_rewards, backward_rewards = compute_cycle_rewards(
-        english_sentences, fwd_texts, all_back_texts,
-        metric=config.reward_metric, alpha=config.alpha,
+        english_sentences,
+        fwd_texts,
+        all_back_texts,
+        metric=config.reward_metric,
     )
+    forward_rewards = forward_rewards.to(model.device)
+    backward_rewards = backward_rewards.to(model.device)
 
+    log_mem("after_all_generation")
     # Step 4: GRPO loss for backward step (target -> eng)
-    flat_bwd_rewards = backward_rewards.reshape(-1)
+    bwd_advantages = (
+        backward_rewards - backward_rewards.mean(dim=-1)
+    ) / backward_rewards.std(dim=-1)
+    flat_bwd_advantages = bwd_advantages.reshape(-1)
     bwd_loss = _compute_grpo_loss(
-        model, ref_model, tokenizer,
-        all_bwd_prompts, all_bwd_completions,
-        flat_bwd_rewards, config.grpo_beta, config.max_tokens,
+        model,
+        ref_model,
+        tokenizer,
+        all_bwd_prompts,
+        all_bwd_completions,
+        flat_bwd_advantages,
+        config,
     )
+    log_mem("after_bwd_loss")
 
     # Step 5: GRPO loss for forward step (eng -> target)
     flat_fwd_prompts = []
     flat_fwd_completions = []
     for i in range(batch_size):
-        for j in range(g):
+        for j in range(config.grpo_group_size):
             flat_fwd_prompts.append(fwd_prompts[i])
             flat_fwd_completions.append(fwd_texts[i][j])
 
     # Total forward reward = alpha * sum_of_backward_rewards + backward_reward_contribution
-    flat_fwd_rewards = forward_rewards.reshape(-1)
+    fwd_advantages = (
+        forward_rewards - forward_rewards.mean(dim=-1)
+    ) / forward_rewards.std(dim=-1)
+    flat_fwd_advantages = fwd_advantages.reshape(-1)
     fwd_loss = _compute_grpo_loss(
-        model, ref_model, tokenizer,
-        flat_fwd_prompts, flat_fwd_completions,
-        flat_fwd_rewards, config.grpo_beta, config.max_tokens,
+        model,
+        ref_model,
+        tokenizer,
+        flat_fwd_prompts,
+        flat_fwd_completions,
+        flat_fwd_advantages,
+        config,
     )
+    log_mem("after_fwd_loss")
 
-    total_loss = fwd_loss + bwd_loss
+    total_loss = config.alpha * fwd_loss + bwd_loss
 
     metrics = {
         "loss": total_loss.item(),

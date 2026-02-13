@@ -1,19 +1,6 @@
 """Prompt templates for translation tasks."""
 
-LANG_NAMES = {
-    "yo": "Yoruba",
-    "ig": "Igbo",
-    "ha": "Hausa",
-    "zu": "Zulu",
-    "xh": "Xhosa",
-    "gn": "Guarani",
-    "qu": "Quechua",
-    "ay": "Aymara",
-    "lo": "Lao",
-    "my": "Burmese",
-    "km": "Khmer",
-    "am": "Amharic",
-}
+from src.data import LANG_NAMES
 
 
 def make_forward_prompt(sentence: str, target_lang: str) -> str:

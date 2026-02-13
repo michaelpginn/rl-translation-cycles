@@ -10,7 +10,6 @@ wheels/
 .venv
 
 # Project artifacts
-data/
 checkpoints/
 logs/
 wandb/
@@ -18,3 +17,7 @@ wandb/
 *.pt
 *.bin
 *.safetensors
+
+.ruff_cache
+.mypy_cache
+.claude

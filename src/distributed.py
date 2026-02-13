@@ -1,46 +1,72 @@
-"""Distributed training utilities."""
-
 import logging
 import os
+import pprint
+from dataclasses import dataclass
+from socket import gethostname
 
 import torch
-import torch.distributed as dist
 
 logger = logging.getLogger(__name__)
 
 
-def setup_distributed() -> tuple[int, int]:
-    """Initialize distributed training if available.
+@dataclass
+class DistributedConfig:
+    world_size: int
+    rank: int  # Will be 0 if not distributed
+    local_rank: int
+    device: torch.device
+    device_type: str
+    distributed: bool
 
-    Returns:
-        (rank, world_size) tuple. (0, 1) if not distributed.
-    """
-    if "RANK" in os.environ:
+    @property
+    def is_main(self):
+        return self.rank == 0
+
+
+def setup_distributed() -> DistributedConfig:
+    if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
+        # Distributed (torchrun)
         rank = int(os.environ["RANK"])
         world_size = int(os.environ["WORLD_SIZE"])
         local_rank = int(os.environ["LOCAL_RANK"])
+        device = torch.device(f"cuda:{local_rank}")
+        torch.cuda.set_device(device)
 
-        dist.init_process_group(backend="nccl")
-        torch.cuda.set_device(local_rank)
         logger.info(
-            f"Initialized distributed: rank={rank}, "
-            f"world_size={world_size}, local_rank={local_rank}"
+            f"Hello from rank {rank} of {world_size} on {gethostname()} "
+            f"(local_rank {local_rank}, device {device})",
         )
-        return rank, world_size
+
+        torch.distributed.init_process_group("nccl", rank=rank, world_size=world_size)
+
+        config = DistributedConfig(
+            world_size=world_size,
+            rank=rank,
+            local_rank=local_rank,
+            device=device,
+            device_type="cuda",
+            distributed=True,
+        )
     else:
-        logger.info("Running in single-process mode")
-        return 0, 1
+        # Single GPU setup
+        device = torch.device(
+            "cuda"
+            if torch.cuda.is_available()
+            else ("mps" if torch.backends.mps.is_available() else "cpu")
+        )
+        config = DistributedConfig(
+            world_size=1,
+            rank=0,
+            local_rank=0,
+            device=device,
+            device_type=str(device),
+            distributed=False,
+        )
+    logger.info("Distributed training parameters: \n%s", pprint.pformat(config))
+    return config
 
 
 def cleanup_distributed():
     """Clean up distributed process group."""
-    if dist.is_initialized():
-        dist.destroy_process_group()
-
-
-def get_device(rank: int) -> torch.device:
-    """Get the device for the current rank."""
-    if torch.cuda.is_available():
-        local_rank = int(os.environ.get("LOCAL_RANK", 0))
-        return torch.device(f"cuda:{local_rank}")
-    return torch.device("cpu")
+    if torch.distributed.is_initialized():
+        torch.distributed.destroy_process_group()

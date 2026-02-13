@@ -39,7 +39,6 @@ def compute_cycle_rewards(
     forward_translations: list[list[str]],
     back_translations: list[list[list[str]]],
     metric: str = "chrf",
-    alpha: float = 1.0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute cycle-consistency rewards for GRPO.
 
@@ -58,7 +57,6 @@ def compute_cycle_rewards(
         forward_translations: [batch_size, g] forward translations
         back_translations: [batch_size, g, g] back translations
         metric: "bleu" or "chrf"
-        alpha: weight for forward translation reward
 
     Returns:
         forward_rewards: [batch_size, g] rewards for forward step
@@ -82,8 +80,5 @@ def compute_cycle_rewards(
 
             # Forward reward = unnormalized sum of backward rewards
             forward_rewards[i, j] = sum(scores)
-
-    # Scale forward rewards by alpha
-    forward_rewards = alpha * forward_rewards
 
     return forward_rewards, backward_rewards
