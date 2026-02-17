@@ -1,7 +1,6 @@
 #!/bin/bash
 #SBATCH --gres=gpu:h100_7g.80
-#SBATCH --ntasks-per-node=20
-#SBATCH --cpus-per-task=4
+#SBATCH --ntasks=20
 #SBATCH --mem=64G
 #SBATCH --time=2-00:00:00
 #SBATCH --output=logs/%j.log
