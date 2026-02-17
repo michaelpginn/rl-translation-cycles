@@ -1,20 +1,18 @@
 #!/bin/bash
-#SBATCH --gres=gpu:a100:1
-#SBATCH --ntasks-per-node=1
+#SBATCH --gres=gpu:h100_7g.80
+#SBATCH --ntasks-per-node=20
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=64G
 #SBATCH --time=2-00:00:00
 #SBATCH --output=logs/%j.log
 #SBATCH --job-name=rltc
-#SBATCH --partition=blanca-curc-gpu
-#SBATCH --account=blanca-curc-gpu
-#SBATCH --qos=blanca-curc-gpu
+#SBATCH --partition=blanca-blast-lecs
+#SBATCH --account=blanca-blast-lecs
+#SBATCH --qos=blanca-blast-lecs
 
 module load uv
 cd "$SLURM_SUBMIT_DIR"
 uv sync
 uv pip install flash-attn --no-build-isolation 2>/dev/null || echo "flash-attn install skipped"
 
-export HF_DATASETS_OFFLINE=1
-export HF_HUB_OFFLINE=1
 uv run python run.py "$1" "${@:2}"
