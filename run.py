@@ -65,8 +65,10 @@ def main() -> None:
             import flash_attn  # noqa: F401 # type:ignore
 
             attn_impl = "flash_attention_2"
+            logger.info("Using flash_attention")
         except ImportError:
             attn_impl = "eager"
+            logger.info("Falling back to eager attention")
         model: Any = AutoModelForCausalLM.from_pretrained(
             config.pretrained_model,
             dtype=torch.bfloat16,
