@@ -20,7 +20,7 @@ with open(_LANGS_CSV) as _f:
     }
 
 
-def _extract_sentences(text: str, max_len: int) -> list[str]:
+def _extract_sentences(text: str, max_len: int, tokenizer) -> list[str]:
     """Split text into sentences and filter by length."""
     # Simple sentence splitting on period/question/exclamation followed by space
     # TODO: Fix edge cases (Dr., Mr., etc)
@@ -29,7 +29,8 @@ def _extract_sentences(text: str, max_len: int) -> list[str]:
     for s in sentences:
         s = s.strip()
         words = s.split()
-        if 5 <= len(words) <= max_len and s[-1] in ".!?":
+        num_tokens = len(tokenizer(s)["input_ids"])
+        if 5 <= len(words) and num_tokens < max_len and s[-1] in ".!?":
             result.append(s)
     return result
 
@@ -37,7 +38,7 @@ def _extract_sentences(text: str, max_len: int) -> list[str]:
 class FineWebTrainDataset(Dataset):  # type: ignore[type-arg]
     """English sentences from FineWeb for cycle-consistency training."""
 
-    def __init__(self, config: ExperimentConfig):
+    def __init__(self, config: ExperimentConfig, tokenizer):
         logger.info(
             f"Loading FineWeb ({config.train_dataset_subset}), "
             f"extracting {config.train_num_sentences} sentences"

@@ -13,7 +13,9 @@ def log_mem(label: str) -> None:
         torch.mps.synchronize()
         allocated = torch.mps.current_allocated_memory() / 1e9
         driver = torch.mps.driver_allocated_memory() / 1e9
-        logger.info(f"[MEM {label}] allocated={allocated:.2f}GB  driver={driver:.2f}GB")
+        logger.debug(
+            f"[MEM {label}] allocated={allocated:.2f}GB  driver={driver:.2f}GB"
+        )
     elif torch.cuda.is_available():
         torch.cuda.synchronize()
         allocated = torch.cuda.memory_allocated() / 1e9

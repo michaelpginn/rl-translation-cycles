@@ -69,7 +69,7 @@ def train(
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-    train_dataset = FineWebTrainDataset(config)
+    train_dataset = FineWebTrainDataset(config, tokenizer)
     sampler: DistributedSampler[FineWebTrainDataset] | None = None
     if dist_config.distributed:
         sampler = DistributedSampler(
