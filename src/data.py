@@ -57,6 +57,7 @@ class FineWebTrainDataset(Dataset):  # type: ignore[type-arg]
             extracted = _extract_sentences(
                 example["text"],  # type:ignore
                 config.train_max_sentence_len,
+                tokenizer,
             )
             sentences.extend(extracted)
         self.sentences = sentences[: config.train_num_sentences]
