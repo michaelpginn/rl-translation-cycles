@@ -183,7 +183,7 @@ def run_grpo_step(
     # Step 4: GRPO loss for backward step (target -> eng)
     eps = 1e-4
     bwd_advantages = (
-        backward_rewards - backward_rewards.mean(dim=-1).unsqueeze(-1)
+        backward_rewards - backward_rewards.mean(dim=-1, keepdim=True)
     ) / (backward_rewards.std(dim=-1).unsqueeze(-1) + eps)
     flat_bwd_advantages = bwd_advantages.reshape(-1)
     bwd_loss: torch.Tensor = torch.tensor(0.0, device=model.device)
@@ -211,7 +211,7 @@ def run_grpo_step(
             flat_fwd_completions.append(fwd_texts[i][j])
 
     # Total forward reward = alpha * sum_of_backward_rewards + backward_reward_contribution
-    fwd_advantages = (forward_rewards - forward_rewards.mean(dim=-1)) / (
+    fwd_advantages = (forward_rewards - forward_rewards.mean(dim=-1, keepdim=True)) / (
         forward_rewards.std(dim=-1) + eps
     )
     flat_fwd_advantages = fwd_advantages.reshape(-1)
