@@ -185,15 +185,20 @@ def run_grpo_step(
         backward_rewards - backward_rewards.mean(dim=-1)
     ) / backward_rewards.std(dim=-1)
     flat_bwd_advantages = bwd_advantages.reshape(-1)
-    bwd_loss = _compute_grpo_loss(
-        model,
-        ref_model,
-        tokenizer,
-        all_bwd_prompts,
-        all_bwd_completions,
-        flat_bwd_advantages,
-        config,
-    )
+    bwd_loss = 0.0
+    # Run in batches so we use a constant amount of mem
+    for group_idx in range(config.grpo_group_size):
+        start_idx = group_idx * config.grpo_group_size
+        end_idx = (group_idx + 1) * config.grpo_group_size
+        bwd_loss += _compute_grpo_loss(
+            model,
+            ref_model,
+            tokenizer,
+            all_bwd_prompts[start_idx:end_idx],
+            all_bwd_completions[start_idx:end_idx],
+            flat_bwd_advantages[start_idx:end_idx],
+            config,
+        )
     log_mem("after_bwd_loss")
 
     # Step 5: GRPO loss for forward step (eng -> target)
