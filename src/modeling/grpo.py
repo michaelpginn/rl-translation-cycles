@@ -114,7 +114,8 @@ def run_grpo_step(
     2. For each forward translation, generate g back translations (target -> eng)
     3. Compute cycle-consistency rewards
     4. Compute GRPO loss for both forward and backward steps
-    5. Return combined loss and metrics
+    5. Run backward on losses
+    6. Return combined loss and metrics
 
     Args:
         model: policy model
@@ -191,16 +192,24 @@ def run_grpo_step(
     for group_idx in range(config.grpo_group_size):
         start_idx = group_idx * config.grpo_group_size * batch_size
         end_idx = (group_idx + 1) * config.grpo_group_size * batch_size
-        bwd_loss += _compute_grpo_loss(
-            model,
-            ref_model,
-            tokenizer,
-            all_bwd_prompts[start_idx:end_idx],
-            all_bwd_completions[start_idx:end_idx],
-            flat_bwd_advantages[start_idx:end_idx],
-            config,
+        group_bwd_loss = (
+            _compute_grpo_loss(
+                model,
+                ref_model,
+                tokenizer,
+                all_bwd_prompts[start_idx:end_idx],
+                all_bwd_completions[start_idx:end_idx],
+                flat_bwd_advantages[start_idx:end_idx],
+                config,
+            )
+            / config.gradient_accumulation_steps
         )
-    log_mem("after_bwd_loss")
+        log_mem(f"after_bwd_loss_g{group_idx}")
+        group_bwd_loss.backward()
+        bwd_loss += group_bwd_loss.detach()
+        log_mem(f"after_bwd_loss_g{group_idx}_backward")
+
+    log_mem("after_all_bwd_loss")
 
     # Step 5: GRPO loss for forward step (eng -> target)
     flat_fwd_prompts = []
@@ -215,18 +224,26 @@ def run_grpo_step(
         forward_rewards.std(dim=-1, keepdim=True) + eps
     )
     flat_fwd_advantages = fwd_advantages.reshape(-1)
-    fwd_loss = _compute_grpo_loss(
-        model,
-        ref_model,
-        tokenizer,
-        flat_fwd_prompts,
-        flat_fwd_completions,
-        flat_fwd_advantages,
-        config,
+    fwd_loss = (
+        _compute_grpo_loss(
+            model,
+            ref_model,
+            tokenizer,
+            flat_fwd_prompts,
+            flat_fwd_completions,
+            flat_fwd_advantages,
+            config,
+        )
+        / config.gradient_accumulation_steps
     )
     log_mem("after_fwd_loss")
+    fwd_loss.backward()
+    fwd_loss = fwd_loss.detach()
+    log_mem("after_fwd_loss_backward")
 
+    # The total loss is detached and just for logging purposes
     total_loss = config.alpha * fwd_loss + bwd_loss
+
     normalized_fwd_rewards = forward_rewards / config.grpo_group_size
     metrics = {
         "loss": total_loss.item(),
