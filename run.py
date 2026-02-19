@@ -52,7 +52,7 @@ def main() -> None:
         wandb.init(
             project=config.wandb_project,
             name=config.wandb_run_name,
-            config=vars(config),
+            config={**vars(config), "distributed": vars(dist_config)},
         )
 
     try:
