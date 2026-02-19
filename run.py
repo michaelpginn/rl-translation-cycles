@@ -11,6 +11,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import wandb
 from src.config import ExperimentConfig, config_to_dataclass
+from src.config.pip_freeze import log_pip_freeze_artifact
 from src.distributed import cleanup_distributed, setup_distributed
 from src.evaluate import evaluate
 from src.train import train
@@ -54,6 +55,7 @@ def main() -> None:
             name=config.wandb_run_name,
             config={**vars(config), "distributed": vars(dist_config)},
         )
+        log_pip_freeze_artifact(f"pip-freeze-{wandb.run.id}")  # type:ignore
 
     try:
         tokenizer = AutoTokenizer.from_pretrained(
