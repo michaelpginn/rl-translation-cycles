@@ -227,14 +227,16 @@ def run_grpo_step(
     log_mem("after_fwd_loss")
 
     total_loss = config.alpha * fwd_loss + bwd_loss
-
+    normalized_fwd_rewards = forward_rewards / config.grpo_group_size
     metrics = {
         "loss": total_loss.item(),
         "fwd_loss": fwd_loss.item(),
         "bwd_loss": bwd_loss.item(),
-        "mean_fwd_reward": forward_rewards.mean().item(),
+        "mean_fwd_reward": normalized_fwd_rewards.mean().item(),
         "mean_bwd_reward": backward_rewards.mean().item(),
-        "mean_total_reward": (forward_rewards.mean() + backward_rewards.mean()).item(),
+        "mean_total_reward": (
+            normalized_fwd_rewards.mean() + backward_rewards.mean()
+        ).item(),
     }
 
     return {"loss": total_loss, "metrics": metrics}
