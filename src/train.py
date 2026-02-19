@@ -107,7 +107,6 @@ def train(
             "mean_fwd_reward": 0.0,
             "mean_bwd_reward": 0.0,
         }
-        num_batches = 0
         optimizer.zero_grad()
         for batch_idx, english_sentences in enumerate(train_loader):
             log_mem(f"batch_{batch_idx}_start")
@@ -127,13 +126,12 @@ def train(
             loss.backward()
             log_mem(f"batch_{batch_idx}_after_backward")
 
+            # Optimizer step
             if (global_step + 1) % config.gradient_accumulation_steps == 0:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm)
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()
-                global_step += 1
-
                 if dist_config.is_main:
                     wandb.log(
                         {
@@ -145,31 +143,33 @@ def train(
                         }
                     )
 
-                if (
-                    config.eval_every_n_steps > 0
-                    and global_step % config.eval_every_n_steps == 0
-                ):
-                    logger.info("Running intermediate evaluation...")
-                    eval_metrics = evaluate(model, tokenizer, config, dist_config)
-                    if dist_config.is_main:
-                        wandb.log(
-                            {
-                                "step": global_step,
-                                **{"eval": eval_metrics},
-                            }
-                        )
-                    model.train()
+            # Periodic eval
+            if (
+                config.eval_every_n_steps > 0
+                and global_step % config.eval_every_n_steps == 0
+            ):
+                logger.info("Running intermediate evaluation...")
+                eval_metrics = evaluate(model, tokenizer, config, dist_config)
+                if dist_config.is_main:
+                    wandb.log(
+                        {
+                            "step": global_step,
+                            **{"eval": eval_metrics},
+                        }
+                    )
+                model.train()
+            global_step += 1
 
             # Update epoch metrics
             for k in epoch_metrics:
                 if k in result["metrics"]:
                     epoch_metrics[k] += result["metrics"][k]
-            num_batches += 1
             if dist_config.is_main:
+                # Show continuous metrics for this epoch
                 pbar.set_postfix(
-                    loss=f"{epoch_metrics['loss'] / num_batches:.4f}",
-                    fwd_r=f"{epoch_metrics['mean_fwd_reward'] / num_batches:.2f}",
-                    bwd_r=f"{epoch_metrics['mean_bwd_reward'] / num_batches:.2f}",
+                    loss=f"{epoch_metrics['loss'] / (batch_idx + 1):.4f}",
+                    fwd_r=f"{epoch_metrics['mean_fwd_reward'] / (batch_idx + 1):.2f}",
+                    bwd_r=f"{epoch_metrics['mean_bwd_reward'] / (batch_idx + 1):.2f}",
                 )
                 pbar.update()
 
