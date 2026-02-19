@@ -37,7 +37,7 @@ class ExperimentConfig:
     grad_norm: float = 1.0
     optimizer: str = "adamw"
     warmup_steps: int = 100
-    eval_every_n_steps: int = 10
+    eval_every_n_steps: int = 50
 
     # Logging
     wandb_project: str = "rl-translation-cycles"

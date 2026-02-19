@@ -189,8 +189,8 @@ def run_grpo_step(
     bwd_loss: torch.Tensor = torch.tensor(0.0, device=model.device)
     # Run in batches so we use a constant amount of mem
     for group_idx in range(config.grpo_group_size):
-        start_idx = group_idx * config.grpo_group_size
-        end_idx = (group_idx + 1) * config.grpo_group_size
+        start_idx = group_idx * config.grpo_group_size * batch_size
+        end_idx = (group_idx + 1) * config.grpo_group_size * batch_size
         bwd_loss += _compute_grpo_loss(
             model,
             ref_model,

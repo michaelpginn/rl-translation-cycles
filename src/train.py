@@ -49,6 +49,8 @@ def train(
         weight_decay=0.01,
     )
     log_mem("after_optimizer_init")
+
+    # Number of optimizer steps
     total_steps = (
         config.max_epochs
         * config.train_num_sentences
@@ -90,7 +92,7 @@ def train(
         wandb.log({"eval": eval_metrics}, step=0)
 
     # Training loop
-    global_step = 0
+    global_step = 0  # Unlike total_steps, this is the real number of batches (# loss.backward() calls)
     pbar = tqdm(
         total=total_steps,
         desc="Training",
@@ -142,22 +144,26 @@ def train(
                             },
                         }
                     )
+                pbar.update()
 
-            # Periodic eval
-            if (
-                config.eval_every_n_steps > 0
-                and global_step % config.eval_every_n_steps == 0
-            ):
-                logger.info("Running intermediate evaluation...")
-                eval_metrics = evaluate(model, tokenizer, config, dist_config)
-                if dist_config.is_main:
-                    wandb.log(
-                        {
-                            "step": global_step,
-                            **{"eval": eval_metrics},
-                        }
-                    )
-                model.train()
+                # Periodic eval
+                total_optimizer_steps = (
+                    global_step + 1
+                ) / config.gradient_accumulation_steps
+                if (
+                    config.eval_every_n_steps > 0
+                    and total_optimizer_steps % config.eval_every_n_steps == 0
+                ):
+                    logger.info("Running intermediate evaluation...")
+                    eval_metrics = evaluate(model, tokenizer, config, dist_config)
+                    if dist_config.is_main:
+                        wandb.log(
+                            {
+                                "step": global_step,
+                                **{"eval": eval_metrics},
+                            }
+                        )
+                    model.train()
             global_step += 1
 
             # Update epoch metrics
@@ -171,7 +177,6 @@ def train(
                     fwd_r=f"{epoch_metrics['mean_fwd_reward'] / (batch_idx + 1):.2f}",
                     bwd_r=f"{epoch_metrics['mean_bwd_reward'] / (batch_idx + 1):.2f}",
                 )
-                pbar.update()
 
         logger.info("Running end-of-epoch evaluation...")
         eval_metrics = evaluate(model, tokenizer, config, dist_config)
