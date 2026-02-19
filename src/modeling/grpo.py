@@ -184,7 +184,7 @@ def run_grpo_step(
     eps = 1e-4
     bwd_advantages = (
         backward_rewards - backward_rewards.mean(dim=-1, keepdim=True)
-    ) / (backward_rewards.std(dim=-1).unsqueeze(-1) + eps)
+    ) / (backward_rewards.std(dim=-1, keepdim=True) + eps)
     flat_bwd_advantages = bwd_advantages.reshape(-1)
     bwd_loss: torch.Tensor = torch.tensor(0.0, device=model.device)
     # Run in batches so we use a constant amount of mem
@@ -212,7 +212,7 @@ def run_grpo_step(
 
     # Total forward reward = alpha * sum_of_backward_rewards + backward_reward_contribution
     fwd_advantages = (forward_rewards - forward_rewards.mean(dim=-1, keepdim=True)) / (
-        forward_rewards.std(dim=-1) + eps
+        forward_rewards.std(dim=-1, keepdim=True) + eps
     )
     flat_fwd_advantages = fwd_advantages.reshape(-1)
     fwd_loss = _compute_grpo_loss(
