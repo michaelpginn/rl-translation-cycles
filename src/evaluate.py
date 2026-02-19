@@ -122,10 +122,10 @@ def evaluate(
         bwd_gold = [backward_df["target_gold"].tolist()]
 
         logger.info(
-            f"First few forward (pred, gold): {pprint.pformat(list(zip(fwd_preds[:5], fwd_gold[0][:5])))}"
+            f"First few forward (pred, gold):\n{pprint.pformat(list(zip(fwd_preds[:5], fwd_gold[0][:5])))}"
         )
         logger.info(
-            f"First few backward (pred, gold): {pprint.pformat(list(zip(bwd_preds[:5], bwd_gold[0][:5])))}"
+            f"First few backward (pred, gold):\n{pprint.pformat(list(zip(bwd_preds[:5], bwd_gold[0][:5])))}"
         )
 
         metrics = {

@@ -124,9 +124,6 @@ def train(
                     config,
                 )
             log_mem(f"batch_{batch_idx}_after_grpo")
-            loss = result["loss"] / config.gradient_accumulation_steps
-            loss.backward()
-            log_mem(f"batch_{batch_idx}_after_backward")
 
             # Optimizer step
             if (global_step + 1) % config.gradient_accumulation_steps == 0:
