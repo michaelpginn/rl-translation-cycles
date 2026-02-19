@@ -171,6 +171,7 @@ def train(
                     fwd_r=f"{epoch_metrics['mean_fwd_reward'] / num_batches:.2f}",
                     bwd_r=f"{epoch_metrics['mean_bwd_reward'] / num_batches:.2f}",
                 )
+                pbar.update()
 
         logger.info("Running end-of-epoch evaluation...")
         eval_metrics = evaluate(model, tokenizer, config, dist_config)
