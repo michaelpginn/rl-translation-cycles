@@ -12,6 +12,6 @@
 module load uv
 cd "$SLURM_SUBMIT_DIR"
 uv sync
-uv pip install flash-attn --no-build-isolation 2>/dev/null || echo "flash-attn install skipped"
+uv pip install flash-attn setuptools --no-build-isolation
 
 uv run python run.py "$1" "${@:2}"

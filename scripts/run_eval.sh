@@ -13,7 +13,7 @@
 module load uv
 cd "$SLURM_SUBMIT_DIR"
 uv sync
-uv pip install flash-attn --no-build-isolation 2>/dev/null || echo "flash-attn install skipped"
+uv pip install flash-attn setuptools --no-build-isolation
 
 export HF_DATASETS_OFFLINE=1
 export HF_HUB_OFFLINE=1
