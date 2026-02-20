@@ -2,8 +2,8 @@ TLDR: Use monolingual data to optimize round-trip translation via GRPO. Sort of 
 
 # Usage
 
-```python
-uv run run.py experiments/qwen3_0.6b_grpo/eval.cfg # whatever config you want
+```bash
+uv run run.py <experiments/qwen3_0.6b_grpo/eval.cfg> # whatever config you want
 ```
 
 # Method
