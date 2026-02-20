@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --time=2-00:00:00
 #SBATCH --partition=ghx4
-#SBATCH --account=bebe-dtai-gh
+#SBATCH --account=bgje-dtai-gh
 #SBATCH --gpu-bind=verbose,closest
 #SBATCH --out=logs/%j.log
 #SBATCH --error=logs/%j.log
