@@ -1,5 +1,11 @@
 TLDR: Use monolingual data to optimize round-trip translation via GRPO. Sort of like backtranslation but without a concrete intermediate translation.
 
+# Usage
+
+```python
+uv run run.py experiments/qwen3_0.6b_grpo/eval.cfg # whatever config you want
+```
+
 # Method
 
 1. Given a sentence in English, generate multiple translations in the target language. For each translation, generate multiple English translations.
