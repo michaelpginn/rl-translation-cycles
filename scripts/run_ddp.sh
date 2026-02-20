@@ -1,14 +1,15 @@
 #!/bin/bash
-#SBATCH --gres=gpu:a100:3
-#SBATCH --ntasks-per-node=3
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=4
+#SBATCH --gpus-per-node=4
+#SBATCH --mem-per-cpu=4GB
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=128G
-#SBATCH --time=7-00:00:00
-#SBATCH --output=logs/%j.log
-#SBATCH --job-name=rltc-ddp
-#SBATCH --partition=blanca-curc-gpu
-#SBATCH --account=blanca-curc-gpu
-#SBATCH --qos=blanca-curc-gpu
+#SBATCH --time=2-00:00:00
+#SBATCH --partition=ghx4
+#SBATCH --account=bebe-dtai-gh
+#SBATCH --gpu-bind=verbose,closest
+#SBATCH --out=logs/%j.log
+#SBATCH --error=logs/%j.log
 
 module load uv
 cd "$SLURM_SUBMIT_DIR"
