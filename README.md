@@ -12,6 +12,10 @@ flowchart TD
   B --> E[He's got a lot on his plate now.]
   C --> F[He has a lot on the menu right now.]
   C --> G[He's got a lot on his plate right now.]
+  classDef english fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+  classDef inuktut fill:#dcfce7,stroke:#22c55e,color:#14532d
+  class A,D,E,F,G english
+  class B,C inuktut
 ```
 
 1. Score each **tgt → en** translation using BLEU/chrF/whatever
@@ -28,6 +32,10 @@ flowchart TD
   E --> s2(0.765)
   F --> s3(0.406)
   G --> s4(1.000)
+  classDef english fill:#dbeafe,stroke:#3b82f6,color:#1e3a5f
+  classDef inuktut fill:#dcfce7,stroke:#22c55e,color:#14532d
+  class A,D,E,F,G english
+  class B,C inuktut
 ```
 
 1. Run GRPO with two mixed tasks:
