@@ -24,6 +24,16 @@ dev = [
     "types-tqdm>=4.67.3.20260205",
 ]
 
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cuda", marker = "sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cuda"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
