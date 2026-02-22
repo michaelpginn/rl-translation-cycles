@@ -209,7 +209,9 @@ def run_grpo_step(
         group_bwd_loss.backward()
         bwd_loss += group_bwd_loss.detach()
         log_mem(f"after_bwd_loss_g{group_idx}_backward")
-        bwd_kl_div += group_bwd_kl_div.item() if group_bwd_kl_div is not None else 0
+        bwd_kl_div += (
+            group_bwd_kl_div.mean().item() if group_bwd_kl_div is not None else 0
+        )
     bwd_kl_div /= config.grpo_group_size
     log_mem("after_all_bwd_loss")
 
@@ -241,6 +243,7 @@ def run_grpo_step(
     fwd_loss.backward()
     fwd_loss = fwd_loss.detach()
     log_mem("after_fwd_loss_backward")
+    fwd_kl_div = fwd_kl_div.mean().item() if fwd_kl_div is not None else 0
 
     # The total loss is detached and just for logging purposes
     total_loss = config.alpha * fwd_loss + bwd_loss
