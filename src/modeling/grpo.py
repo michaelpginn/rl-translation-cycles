@@ -24,7 +24,7 @@ def _compute_grpo_loss(
     completions: list[str],
     advantages: torch.Tensor,
     config: ExperimentConfig,
-) -> torch.Tensor:
+) -> tuple[torch.Tensor, torch.Tensor | None]:
     """Compute the DAPO policy gradient loss for a batch.
 
     Uses sentence-level rewards distributed evenly over completion tokens.
@@ -40,7 +40,7 @@ def _compute_grpo_loss(
         max_tokens: max sequence length
 
     Returns:
-        scalar loss tensor
+        loss (Tensor), kl_divergence (Tensor)
     """
     # Tokenize full sequences (prompt + completion)
     full_texts = [p + " " + c for p, c in zip(prompts, completions)]
@@ -96,9 +96,10 @@ def _compute_grpo_loss(
         kl_divergence = torch.exp(log_ref_ratio) - log_ref_ratio - 1
         token_level_loss = -(policy_probs - config.grpo_beta * kl_divergence)
     else:
+        kl_divergence = None
         token_level_loss = -policy_probs
     loss = (token_level_loss * mask).sum() / mask.sum()
-    return loss
+    return loss, kl_divergence
 
 
 def run_grpo_step(
@@ -183,32 +184,33 @@ def run_grpo_step(
     log_mem("after_all_generation")
     # Step 4: GRPO loss for backward step (target -> eng)
     eps = 1e-4
+    bwd_std = backward_rewards.std(dim=-1, keepdim=True)
     bwd_advantages = (
         backward_rewards - backward_rewards.mean(dim=-1, keepdim=True)
-    ) / (backward_rewards.std(dim=-1, keepdim=True) + eps)
+    ) / (bwd_std + eps)
     flat_bwd_advantages = bwd_advantages.reshape(-1)
     bwd_loss: torch.Tensor = torch.tensor(0.0, device=model.device)
+    bwd_kl_div = 0
     # Run in batches so we use a constant amount of mem
     for group_idx in range(config.grpo_group_size):
         start_idx = group_idx * config.grpo_group_size * batch_size
         end_idx = (group_idx + 1) * config.grpo_group_size * batch_size
-        group_bwd_loss = (
-            _compute_grpo_loss(
-                model,
-                ref_model,
-                tokenizer,
-                all_bwd_prompts[start_idx:end_idx],
-                all_bwd_completions[start_idx:end_idx],
-                flat_bwd_advantages[start_idx:end_idx],
-                config,
-            )
-            / config.gradient_accumulation_steps
+        group_bwd_loss, group_bwd_kl_div = _compute_grpo_loss(
+            model,
+            ref_model,
+            tokenizer,
+            all_bwd_prompts[start_idx:end_idx],
+            all_bwd_completions[start_idx:end_idx],
+            flat_bwd_advantages[start_idx:end_idx],
+            config,
         )
+        group_bwd_loss /= config.gradient_accumulation_steps
         log_mem(f"after_bwd_loss_g{group_idx}")
         group_bwd_loss.backward()
         bwd_loss += group_bwd_loss.detach()
         log_mem(f"after_bwd_loss_g{group_idx}_backward")
-
+        bwd_kl_div += group_bwd_kl_div.item() if group_bwd_kl_div is not None else 0
+    bwd_kl_div /= config.grpo_group_size
     log_mem("after_all_bwd_loss")
 
     # Step 5: GRPO loss for forward step (eng -> target)
@@ -220,22 +222,21 @@ def run_grpo_step(
             flat_fwd_completions.append(fwd_texts[i][j])
 
     # Total forward reward = alpha * sum_of_backward_rewards + backward_reward_contribution
+    fwd_std = forward_rewards.std(dim=-1, keepdim=True)
     fwd_advantages = (forward_rewards - forward_rewards.mean(dim=-1, keepdim=True)) / (
-        forward_rewards.std(dim=-1, keepdim=True) + eps
+        fwd_std + eps
     )
     flat_fwd_advantages = fwd_advantages.reshape(-1)
-    fwd_loss = (
-        _compute_grpo_loss(
-            model,
-            ref_model,
-            tokenizer,
-            flat_fwd_prompts,
-            flat_fwd_completions,
-            flat_fwd_advantages,
-            config,
-        )
-        / config.gradient_accumulation_steps
+    fwd_loss, fwd_kl_div = _compute_grpo_loss(
+        model,
+        ref_model,
+        tokenizer,
+        flat_fwd_prompts,
+        flat_fwd_completions,
+        flat_fwd_advantages,
+        config,
     )
+    fwd_loss /= config.gradient_accumulation_steps
     log_mem("after_fwd_loss")
     fwd_loss.backward()
     fwd_loss = fwd_loss.detach()
@@ -254,6 +255,10 @@ def run_grpo_step(
         "mean_total_reward": (
             normalized_fwd_rewards.mean() + backward_rewards.mean()
         ).item(),
+        "fwd_kl_div": fwd_kl_div,
+        "bwd_kl_div": bwd_kl_div,
+        "mean_fwd_std": fwd_std.mean().item(),
+        "mean_bwd_std": bwd_std.mean().item(),
     }
 
     return {"loss": total_loss, "metrics": metrics}

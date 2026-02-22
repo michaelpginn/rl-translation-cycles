@@ -127,6 +127,13 @@ def train(
 
             # Optimizer step
             if (global_step + 1) % config.gradient_accumulation_steps == 0:
+                # Log grad norm
+                grad_norm = 0
+                for p in model.parameters():
+                    param_norm = p.grad.detach().data.norm(2)
+                    grad_norm += param_norm.item() ** 2
+                grad_norm = grad_norm**0.5
+
                 torch.nn.utils.clip_grad_norm_(model.parameters(), config.grad_norm)
                 optimizer.step()
                 scheduler.step()
@@ -138,6 +145,7 @@ def train(
                             "train": {
                                 "lr": scheduler.get_last_lr()[0],
                                 **result["metrics"],
+                                "grad_norm": grad_norm,
                             },
                         }
                     )
