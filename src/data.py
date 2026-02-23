@@ -89,8 +89,8 @@ class FloresEvalDataset(Dataset):  # type: ignore[type-arg]
             trust_remote_code=True,
             split=config.eval_split,
         ).to_pandas()  # type:ignore
-        eng["text"] = eng["text"].str.replace("\xa0", " ")
-        tgt["text"] = tgt["text"].str.replace("\xa0", " ")
+        eng["text"] = eng["text"].str.replace("\xa0", " ")  # type:ignore
+        tgt["text"] = tgt["text"].str.replace("\xa0", " ")  # type:ignore
         parallel = pd.merge(tgt, eng, on=["id", "split"], suffixes=("_tgt", "_eng"))  # type:ignore
         if config.eval_num_sentences is not None:
             parallel = parallel.iloc[: config.eval_num_sentences]
