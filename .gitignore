@@ -21,3 +21,8 @@ wandb/
 .ruff_cache
 .mypy_cache
 .claude
+
+*.out
+build.log
+build.txt
+data/*.json
