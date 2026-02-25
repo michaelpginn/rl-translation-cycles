@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --gres=gpu:h100_3g.40gb
-#SBATCH --ntasks=20
-#SBATCH --mem-per-cpu=4000m
+#SBATCH --ntasks=2
+#SBATCH --mem-per-cpu=1000m
 #SBATCH --time=2-00:00:00
 #SBATCH --output=logs/%j.log
 #SBATCH --job-name=rltc

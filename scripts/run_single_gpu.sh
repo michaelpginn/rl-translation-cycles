@@ -2,8 +2,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=1
-#SBATCH --mem-per-cpu=8GB
-#SBATCH --cpus-per-task=4
+#SBATCH --mem-per-cpu=1GB
+#SBATCH --cpus-per-task=2
 #SBATCH --time=2-00:00:00
 #SBATCH --partition=ghx4
 #SBATCH --account=bgje-dtai-gh
