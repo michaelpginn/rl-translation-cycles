@@ -9,6 +9,8 @@
 #SBATCH --partition=blanca-blast-lecs
 #SBATCH --account=blanca-blast-lecs
 #SBATCH --qos=blanca-blast-lecs
+#SBATCH --mail-user=michael.ginn@colorado.edu
+#SBATCH --mail-type=ALL
 
 module load uv
 cd "$SLURM_SUBMIT_DIR"
