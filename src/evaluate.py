@@ -40,9 +40,10 @@ def generate(
             rank=dist_config.rank,
             shuffle=False,
         )
+    # We use a larger batch size than for GRPO, since the memory footprint is way less
     loader = DataLoader(
         dataset,
-        batch_size=config.batch_size,
+        batch_size=config.batch_size * config.grpo_group_size,
         sampler=sampler,
         shuffle=False,
     )

@@ -2,7 +2,7 @@
 #SBATCH --gres=gpu:h100_3g.40gb
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
-#SBATCH --mem-per-cpu=2000m
+#SBATCH --mem=8000m
 #SBATCH --time=2-00:00:00
 #SBATCH --output=logs/%j.log
 #SBATCH --job-name=rltc

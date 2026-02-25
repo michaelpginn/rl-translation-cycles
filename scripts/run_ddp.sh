@@ -12,7 +12,7 @@
 #SBATCH --error=logs/%j.log
 #SBATCH --mail-user=michael.ginn@colorado.edu
 #SBATCH --mail-type=ALL
-#
+
 module load uv
 cd "$SLURM_SUBMIT_DIR"
 uv sync
