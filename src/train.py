@@ -92,6 +92,7 @@ def train(
         wandb.log({"eval": eval_metrics}, step=0)
 
     # Training loop
+    torch.cuda.memory._record_memory_history(max_entries=100000)
     global_step = 0  # Unlike total_steps, this is the real number of batches (# loss.backward() calls)
     pbar = tqdm(
         total=total_steps,
@@ -198,6 +199,12 @@ def train(
             model.save_pretrained(ckpt_dir)
             tokenizer.save_pretrained(ckpt_dir)
             logger.info(f"Saved checkpoint to {ckpt_dir}")
+
+    try:
+        torch.cuda.memory._dump_snapshot("snapshot.pickle")
+    except Exception as e:
+        logger.error(f"Failed to capture memory snapshot {e}")
+    torch.cuda.memory._record_memory_history(enabled=None)
 
     if dist_config.is_main:
         wandb.finish()
