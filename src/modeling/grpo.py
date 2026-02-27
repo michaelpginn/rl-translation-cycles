@@ -181,7 +181,9 @@ def run_grpo_step(
     forward_rewards = forward_rewards.to(model.device)
     backward_rewards = backward_rewards.to(model.device)
 
+    torch.cuda.empty_cache()
     log_mem("after_all_generation")
+
     # Step 4: GRPO loss for backward step (target -> eng)
     eps = 1e-4
     bwd_std = backward_rewards.std(dim=-1, keepdim=True)

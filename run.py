@@ -72,10 +72,11 @@ def main() -> None:
             logger.info("Falling back to eager attention")
         model: Any = AutoModelForCausalLM.from_pretrained(
             config.pretrained_model,
-            dtype=torch.bfloat16,
+            torch_dtype=torch.bfloat16,
             attn_implementation=attn_impl,
         )
         model = model.to(dist_config.device)
+        model.gradient_checkpointing_enable()
         if dist_config.distributed:
             logger.info("Wrapping model in DDP")
             model = torch.nn.parallel.DistributedDataParallel(
