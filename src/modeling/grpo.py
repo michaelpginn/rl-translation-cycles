@@ -72,11 +72,11 @@ def _compute_grpo_loss(
     # Compute prob ratio (first term)
     log_mem(f"grpo_loss_before_policy_fwd (n_seqs={len(prompts)})")
     logger.debug(f"Size of inputs: {encodings.input_ids.shape}")
-    policy_logprobs = (
-        torch.log_softmax(model(**encodings).logits, dim=-1)
-        .gather(dim=-1, index=labels.unsqueeze(-1))
-        .squeeze(-1)
-    )
+    policy_logits = model(**encodings).logits
+    policy_lse = policy_logits.logsumexp(dim=-1)
+    policy_chosen = policy_logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
+    policy_logprobs = policy_chosen - policy_lse
+    del policy_logits, policy_lse, policy_chosen
     log_mem("grpo_loss_after_policy_fwd")
     policy_probs = torch.exp(
         policy_logprobs - policy_logprobs.detach()
@@ -85,12 +85,11 @@ def _compute_grpo_loss(
     # Compute kl divergence (second term)
     if config.grpo_beta > 0:
         with torch.no_grad():
-            ref_logprobs = (
-                torch.log_softmax(ref_model(**encodings).logits, dim=-1)
-                .gather(dim=-1, index=labels.unsqueeze(-1))
-                .squeeze(-1)
-                .detach()
-            )
+            ref_logits = ref_model(**encodings).logits.detach()
+            ref_lse = ref_logits.logsumexp(dim=-1)
+            ref_chosen = ref_logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
+            ref_logprobs = ref_chosen - ref_lse
+            del ref_logits, ref_lse, ref_chosen
         log_mem("grpo_loss_after_ref_fwd")
         log_ref_ratio = policy_logprobs - ref_logprobs
         kl_divergence = torch.exp(log_ref_ratio) - log_ref_ratio - 1
