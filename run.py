@@ -76,7 +76,6 @@ def main() -> None:
             attn_implementation=attn_impl,
         )
         model = model.to(dist_config.device)
-        breakpoint()
         model.gradient_checkpointing_enable()
         if dist_config.distributed:
             logger.info("Wrapping model in DDP")
