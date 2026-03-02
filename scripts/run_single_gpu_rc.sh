@@ -17,6 +17,8 @@ cd "$SLURM_SUBMIT_DIR"
 uv sync
 uv pip install flash-attn setuptools --no-build-isolation
 
+export PYTORCH_ALLOC_CON=expandable_segments:True
+
 echo "=== CUDA + PyTorch diagnostics ==="
 uv run python - <<'PY'
 import torch, os
