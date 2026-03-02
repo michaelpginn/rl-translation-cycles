@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import random
 from typing import Any
 
 import torch
@@ -45,6 +46,8 @@ def main() -> None:
 
     config = config_to_dataclass(args.config, args.overrides, ExperimentConfig)
     dist_config = setup_distributed()
+    random.seed(0)
+    torch.manual_seed(0)
 
     if dist_config.is_main:
         logger.info(f"Config: {config}")

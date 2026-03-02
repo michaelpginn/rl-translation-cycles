@@ -20,11 +20,15 @@ with open(_LANGS_CSV) as _f:
     }
 
 
+sentence_regex = r"(?<=[.?!\"])\s+([A-Z](?:[A-Za-z0-9,\s\:\"\'\/\-\\]+)[.?!]+\"?)"
+
+
 def _extract_sentences(text: str, max_len: int, tokenizer) -> list[str]:
     """Split text into sentences and filter by length."""
     # Simple sentence splitting on period/question/exclamation followed by space
     # TODO: Fix edge cases (Dr., Mr., etc)
-    sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    sentences = re.findall(sentence_regex, text.strip(), flags=re.DOTALL | re.MULTILINE)
+    # sentences = re.split(r"(?<=[.!?])\s+", text.strip())
     result = []
     for s in sentences:
         s = s.strip()
