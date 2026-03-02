@@ -23,9 +23,11 @@ class ExperimentConfig:
     # GRPO
     grpo_group_size: int = 4
     grpo_beta: float = 0.1
-    grpo_temperature: float = 0.7
+    grpo_temperature: float = 0.5
     grpo_top_p: float = 0.9
-    grpo_epsilon: float = 0.2
+    grpo_epsilon: float = (
+        0.2  # Not used for now, used if doing multiple updates/rollout
+    )
     reward_metric: Literal["bleu", "chrf"] = "chrf"
     alpha: float = 1.0  # weight for forward translation reward
 

@@ -73,7 +73,7 @@ def _compute_grpo_loss(
     log_mem(f"grpo_loss_before_policy_fwd (n_seqs={len(prompts)})")
     logger.debug(f"Size of inputs: {encodings.input_ids.shape}")
     policy_logits = model(**encodings).logits
-    policy_lse = policy_logits.logsumexp(dim=-1)
+    policy_lse = policy_logits[:, 1:, :].logsumexp(dim=-1)
     policy_chosen = policy_logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
     policy_logprobs = policy_chosen - policy_lse
     del policy_logits, policy_lse, policy_chosen
@@ -86,7 +86,7 @@ def _compute_grpo_loss(
     if config.grpo_beta > 0:
         with torch.no_grad():
             ref_logits = ref_model(**encodings).logits.detach()
-            ref_lse = ref_logits.logsumexp(dim=-1)
+            ref_lse = ref_logits[:, 1:, :].logsumexp(dim=-1)
             ref_chosen = ref_logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
             ref_logprobs = ref_chosen - ref_lse
             del ref_logits, ref_lse, ref_chosen
@@ -132,6 +132,7 @@ def run_grpo_step(
 
     # Step 1: Forward translation (eng -> target)
     log_mem("grpo_step_start")
+    model.eval()
     fwd_prompts = [make_forward_prompt(s, config.language) for s in english_sentences]
     with torch.no_grad():
         fwd_texts, _ = sample_completions(
@@ -146,12 +147,12 @@ def run_grpo_step(
     log_mem("after_fwd_generation")
 
     # Step 2: Back translation (target -> eng) for each forward candidate
-    all_back_texts = []  # [batch, g_fwd, g_bwd]
+    all_back_texts: list[list[list[str]]] = []  # [batch, g_fwd, g_bwd]
     all_bwd_prompts = []  # flat list for loss computation
     all_bwd_completions = []
 
     for i in range(batch_size):
-        group_back = []
+        group_back: list[list[str]] = []
         for j in range(config.grpo_group_size):
             bwd_prompt = make_backward_prompt(fwd_texts[i][j], config.language)
             with torch.no_grad():
@@ -181,6 +182,7 @@ def run_grpo_step(
     backward_rewards = backward_rewards.to(model.device)
 
     torch.cuda.empty_cache()
+    model.train()
     log_mem("after_all_generation")
 
     # Step 4: GRPO loss for backward step (target -> eng)

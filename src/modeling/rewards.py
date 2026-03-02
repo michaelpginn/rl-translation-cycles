@@ -1,6 +1,7 @@
 """Cycle-consistency reward computation."""
 
 import logging
+from pprint import pformat
 
 import sacrebleu
 import torch
@@ -39,6 +40,7 @@ def compute_cycle_rewards(
     forward_translations: list[list[str]],
     back_translations: list[list[list[str]]],
     metric: str = "chrf",
+    log=True,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute cycle-consistency rewards for GRPO.
 
@@ -80,5 +82,13 @@ def compute_cycle_rewards(
 
             # Forward reward = unnormalized sum of backward rewards
             forward_rewards[i, j] = sum(scores)
+
+    if log:
+        logger.info(f"""First example:
+Original eng: {original_english[0]}
+Forw pred: {forward_translations[0]}
+Forw rwd:  {forward_rewards[0].tolist()}
+Back pred: {pformat(back_translations[0])}
+Back rwd: {backward_rewards[0]}""")
 
     return forward_rewards, backward_rewards
