@@ -72,7 +72,7 @@ def main() -> None:
             logger.info("Falling back to eager attention")
         model: Any = AutoModelForCausalLM.from_pretrained(
             config.pretrained_model,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
             attn_implementation=attn_impl,
         )
         model = model.to(dist_config.device)
