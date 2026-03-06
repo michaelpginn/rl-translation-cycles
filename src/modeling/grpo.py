@@ -73,7 +73,7 @@ def _compute_grpo_loss(
     log_mem(f"grpo_loss_before_policy_fwd (n_seqs={len(prompts)})")
     logger.debug(f"Size of inputs: {encodings.input_ids.shape}")
     policy_logits = model(**encodings).logits
-    policy_lse = policy_logits[:, 1:, :].logsumexp(dim=-1)
+    policy_lse = policy_logits[:, :-1, :].logsumexp(dim=-1)
     policy_chosen = policy_logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
     policy_logprobs = policy_chosen - policy_lse
     del policy_logits, policy_lse, policy_chosen
@@ -86,7 +86,7 @@ def _compute_grpo_loss(
     if config.grpo_beta > 0:
         with torch.no_grad():
             ref_logits = ref_model(**encodings).logits.detach()
-            ref_lse = ref_logits[:, 1:, :].logsumexp(dim=-1)
+            ref_lse = ref_logits[:, :-1, :].logsumexp(dim=-1)
             ref_chosen = ref_logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
             ref_logprobs = ref_chosen - ref_lse
             del ref_logits, ref_lse, ref_chosen
