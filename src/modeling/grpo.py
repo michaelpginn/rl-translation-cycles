@@ -248,7 +248,7 @@ def run_grpo_step(
     fwd_kl_div = fwd_kl_div.mean().item() if fwd_kl_div is not None else 0
 
     # The total loss is detached and just for logging purposes
-    total_loss = fwd_loss + config.alpha * bwd_loss
+    total_loss = (1 - config.alpha) * fwd_loss + config.alpha * bwd_loss
 
     normalized_fwd_rewards = forward_rewards / config.grpo_group_size
     metrics = {
