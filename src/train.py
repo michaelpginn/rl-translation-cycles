@@ -156,7 +156,7 @@ def train(
                 # Periodic eval
                 total_optimizer_steps = (
                     global_step + 1
-                ) / config.gradient_accumulation_steps
+                ) // config.gradient_accumulation_steps
                 if (
                     config.eval_every_n_steps > 0
                     and total_optimizer_steps % config.eval_every_n_steps == 0
