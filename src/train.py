@@ -143,13 +143,13 @@ def train(
                 if dist_config.is_main:
                     wandb.log(
                         {
-                            "step": global_step,
                             "train": {
                                 "lr": scheduler.get_last_lr()[0],
                                 **result["metrics"],
                                 "grad_norm": grad_norm,
                             },
-                        }
+                        },
+                        step=global_step,
                     )
                 pbar.update()
 
@@ -166,9 +166,9 @@ def train(
                     if dist_config.is_main:
                         wandb.log(
                             {
-                                "step": global_step,
                                 **{"eval": eval_metrics},
-                            }
+                            },
+                            step=global_step,
                         )
                     model.train()
             global_step += 1
