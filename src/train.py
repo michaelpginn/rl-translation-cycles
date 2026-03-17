@@ -191,9 +191,9 @@ def train(
             wandb.log(
                 {
                     "epoch": epoch + 1,
-                    "step": global_step,
-                    **{f"eval/{k}": v for k, v in eval_metrics.items()},
-                }
+                    **{"eval": eval_metrics},
+                },
+                step=global_step,
             )
             ckpt_dir = os.path.join(config.models_dir, f"epoch_{epoch + 1}")
             os.makedirs(ckpt_dir, exist_ok=True)
