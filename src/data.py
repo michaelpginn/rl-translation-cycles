@@ -4,6 +4,7 @@ import csv
 import logging
 import re
 from pathlib import Path
+from typing import Literal
 
 import pandas as pd
 from datasets import load_dataset
@@ -75,9 +76,11 @@ class FineWebTrainDataset(Dataset):  # type: ignore[type-arg]
 
 
 class FloresEvalDataset(Dataset):  # type: ignore[type-arg]
-    """FLORES-200 parallel data for evaluation."""
+    """FLORES-200 parallel data for evaluation.
+    See https://huggingface.co/datasets/openlanguagedata/flores_plus#dataset-structure
+    """
 
-    def __init__(self, config: ExperimentConfig):
+    def __init__(self, split: Literal["dev", "devtest"], config: ExperimentConfig):
         self.target_lang = config.language
 
         logger.info(f"Loading FLORES-200 eval data: eng_Latn -> {self.target_lang}")
@@ -85,13 +88,13 @@ class FloresEvalDataset(Dataset):  # type: ignore[type-arg]
             config.eval_dataset,
             "eng_Latn",
             trust_remote_code=True,
-            split=config.eval_split,
+            split=split,
         ).to_pandas()  # type:ignore
         tgt = load_dataset(
             config.eval_dataset,
             self.target_lang,
             trust_remote_code=True,
-            split=config.eval_split,
+            split=split,
         ).to_pandas()  # type:ignore
         eng["text"] = eng["text"].str.replace("\xa0", " ")  # type:ignore
         tgt["text"] = tgt["text"].str.replace("\xa0", " ")  # type:ignore

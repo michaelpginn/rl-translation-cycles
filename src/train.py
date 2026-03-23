@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 import wandb
 from src.config.experiment_config import ExperimentConfig
-from src.data import FineWebTrainDataset
+from src.data import FineWebTrainDataset, FloresEvalDataset
 from src.distributed import DistributedConfig
 from src.evaluate import evaluate
 from src.modeling.grpo import run_grpo_step
@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 def train(
     model,
     tokenizer,
+    dev_dataset: FloresEvalDataset,
+    devtest_dataset: FloresEvalDataset,
     config: ExperimentConfig,
     dist_config: DistributedConfig,
 ) -> None:
@@ -87,9 +89,10 @@ def train(
     if dist_config.is_main:
         logger.info("Running initial evaluation...")
     model.eval()
-    eval_metrics = evaluate(model, tokenizer, config, dist_config)
+    dev_metrics = evaluate(model, tokenizer, dev_dataset, config, dist_config)
+    devtest_metrics = evaluate(model, tokenizer, devtest_dataset, config, dist_config)
     if dist_config.is_main:
-        wandb.log({"eval": eval_metrics}, step=0)
+        wandb.log({"dev": dev_metrics, "devtest": devtest_metrics}, step=0)
 
     # Training loop
     if dist_config.device_type == "cuda":
@@ -162,12 +165,15 @@ def train(
                     and total_optimizer_steps % config.eval_every_n_steps == 0
                 ):
                     logger.info("Running intermediate evaluation...")
-                    eval_metrics = evaluate(model, tokenizer, config, dist_config)
+                    dev_metrics = evaluate(
+                        model, tokenizer, dev_dataset, config, dist_config
+                    )
+                    devtest_metrics = evaluate(
+                        model, tokenizer, devtest_dataset, config, dist_config
+                    )
                     if dist_config.is_main:
                         wandb.log(
-                            {
-                                **{"eval": eval_metrics},
-                            },
+                            {"dev": dev_metrics, "devtest": devtest_metrics},
                             step=global_step,
                         )
                     model.train()
@@ -186,13 +192,13 @@ def train(
                 )
 
         logger.info("Running end-of-epoch evaluation...")
-        eval_metrics = evaluate(model, tokenizer, config, dist_config)
+        dev_metrics = evaluate(model, tokenizer, dev_dataset, config, dist_config)
+        devtest_metrics = evaluate(
+            model, tokenizer, devtest_dataset, config, dist_config
+        )
         if dist_config.is_main:
             wandb.log(
-                {
-                    "epoch": epoch + 1,
-                    **{"eval": eval_metrics},
-                },
+                {"epoch": epoch + 1, "dev": dev_metrics, "devtest": devtest_metrics},
                 step=global_step,
             )
             ckpt_dir = os.path.join(config.models_dir, f"epoch_{epoch + 1}")

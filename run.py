@@ -12,6 +12,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 import wandb
 from src.config import ExperimentConfig, config_to_dataclass
+from src.data import FloresEvalDataset
 from src.distributed import cleanup_distributed, setup_distributed
 from src.evaluate import evaluate
 from src.train import train
@@ -86,12 +87,18 @@ def main() -> None:
                 model, device_ids=[dist_config.local_rank]
             )
 
+        dev_dataset = FloresEvalDataset("dev", config)
+        devtest_dataset = FloresEvalDataset("devtest", config)
+
         if config.mode == "train":
-            train(model, tokenizer, config, dist_config)
+            train(model, tokenizer, dev_dataset, devtest_dataset, config, dist_config)
         elif config.mode == "eval":
-            metrics = evaluate(model, tokenizer, config, dist_config)
+            dev_metrics = evaluate(model, tokenizer, dev_dataset, config, dist_config)
+            devtest_metrics = evaluate(
+                model, tokenizer, devtest_dataset, config, dist_config
+            )
             if dist_config.is_main:
-                wandb.log({"eval": metrics})
+                wandb.log({"dev": dev_metrics, "devtest": devtest_metrics})
         else:
             raise ValueError(f"Unknown mode: {config.mode}")
     finally:

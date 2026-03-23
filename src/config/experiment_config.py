@@ -17,7 +17,6 @@ class ExperimentConfig:
     train_max_sentence_len: int = 128
 
     eval_dataset: str = "openlanguagedata/flores_plus"
-    eval_split: str = "devtest"
     eval_num_sentences: int | None = None
 
     # GRPO

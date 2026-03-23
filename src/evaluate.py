@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 def generate(
     model: Any,
     tokenizer: Any,
+    dataset: FloresEvalDataset,
     config: ExperimentConfig,
     dist_config: DistributedConfig,
 ):
@@ -31,7 +32,6 @@ def generate(
 
     Returns:
         A tuple (forward_df, backward_df) of DataFrames with predictions and references"""
-    dataset = FloresEvalDataset(config)
     sampler: DistributedSampler | None = None
     if dist_config.world_size > 1:
         sampler = DistributedSampler(
@@ -43,7 +43,7 @@ def generate(
     # We use a larger batch size than for GRPO, since the memory footprint is way less
     loader = DataLoader(
         dataset,
-        batch_size=config.batch_size * (config.grpo_group_size**2),
+        batch_size=2 * config.batch_size * (config.grpo_group_size**2),
         sampler=sampler,
         shuffle=False,
     )
@@ -100,6 +100,7 @@ def generate(
 def evaluate(
     model: Any,
     tokenizer: Any,
+    dataset: FloresEvalDataset,
     config: ExperimentConfig,
     dist_config: DistributedConfig,
 ) -> dict:
@@ -114,7 +115,7 @@ def evaluate(
     Returns:
         dict of metrics
     """
-    forward_df, backward_df = generate(model, tokenizer, config, dist_config)
+    forward_df, backward_df = generate(model, tokenizer, dataset, config, dist_config)
 
     if dist_config.is_main:
         fwd_preds = forward_df["target_pred"].tolist()
