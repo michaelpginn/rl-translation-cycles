@@ -143,23 +143,38 @@ def train(
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()
-                if dist_config.is_main:
-                    wandb.log(
-                        {
-                            "train": {
-                                "lr": scheduler.get_last_lr()[0],
-                                **result["metrics"],
-                                "grad_norm": grad_norm,
-                            },
-                        },
-                        step=global_step,
-                    )
-                pbar.update()
-
-                # Periodic eval
                 total_optimizer_steps = (
                     global_step + 1
                 ) // config.gradient_accumulation_steps
+                if dist_config.is_main:
+                    train_log = {
+                        "train": {
+                            "lr": scheduler.get_last_lr()[0],
+                            **result["metrics"],
+                            "grad_norm": grad_norm,
+                        },
+                    }
+                    if (
+                        config.eval_every_n_steps > 0
+                        and result.get("example_rows")
+                        and total_optimizer_steps % (config.eval_every_n_steps * 10)
+                        == 0
+                    ):
+                        table = wandb.Table(
+                            columns=[
+                                "original_english",
+                                "fwd_idx",
+                                "predicted_target",
+                                "bwd_idx",
+                                "final_predicted_english",
+                            ],
+                            data=result["example_rows"],
+                        )
+                        train_log["train/examples"] = table
+                    wandb.log(train_log, step=global_step)
+                pbar.update()
+
+                # Periodic eval
                 if (
                     config.eval_every_n_steps > 0
                     and total_optimizer_steps % config.eval_every_n_steps == 0

@@ -259,6 +259,16 @@ def run_grpo_step(
     # The total loss is detached and just for logging purposes
     total_loss = fwd_loss + bwd_loss
 
+    # Build example table rows for wandb (up to 10 source sentences)
+    num_examples = min(10, batch_size)
+    g = config.grpo_group_size
+    example_rows = [
+        [english_sentences[i], j, fwd_texts[i][j], k, all_back_texts[i][j][k]]
+        for i in range(num_examples)
+        for j in range(g)
+        for k in range(g)
+    ]
+
     normalized_fwd_rewards = forward_rewards / config.grpo_group_size
     metrics = {
         "loss": total_loss,
@@ -275,4 +285,4 @@ def run_grpo_step(
         "mean_bwd_std": bwd_std.mean().item(),
     }
 
-    return {"loss": total_loss, "metrics": metrics}
+    return {"loss": total_loss, "metrics": metrics, "example_rows": example_rows}
