@@ -170,7 +170,7 @@ def train(
                             ],
                             data=result["example_rows"],
                         )
-                        train_log["train/examples"] = table
+                        train_log["train/examples"] = table  # type:ignore
                     wandb.log(train_log, step=global_step)
                 pbar.update()
 

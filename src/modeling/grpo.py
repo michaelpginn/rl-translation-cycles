@@ -190,7 +190,7 @@ def run_grpo_step(
     bwd_loss = 0.0
     bwd_kl_div = 0.0
 
-    bwd_std = backward_rewards.std(dim=-1, keepdim=True)
+    bwd_std = backward_rewards.std(dim=-1, keepdim=True).clamp(min=1e-8)
     bwd_advantages = (
         backward_rewards - backward_rewards.mean(dim=-1, keepdim=True)
     ) / (bwd_std + eps)
@@ -230,7 +230,7 @@ def run_grpo_step(
             flat_fwd_prompts.append(fwd_prompts[i])
             flat_fwd_completions.append(fwd_texts[i][j])
 
-    fwd_std = forward_rewards.std(dim=-1, keepdim=True)
+    fwd_std = forward_rewards.std(dim=-1, keepdim=True).clamp(min=1e-8)
     fwd_advantages = (forward_rewards - forward_rewards.mean(dim=-1, keepdim=True)) / (
         fwd_std + eps
     )
