@@ -18,6 +18,7 @@ uv sync
 uv pip install flash-attn setuptools --no-build-isolation
 
 export PYTORCH_ALLOC_CON=expandable_segments:True
+export CUDA_LAUNCH_BLOCKING=1
 
 echo "=== CUDA + PyTorch diagnostics ==="
 uv run python - <<'PY'
