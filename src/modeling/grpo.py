@@ -247,6 +247,7 @@ def run_grpo_step(
             config,
         )
         fwd_loss /= config.gradient_accumulation_steps
+        fwd_loss *= 1 - config.alpha
         log_mem("after_fwd_loss")
         fwd_loss.backward()
         fwd_loss = fwd_loss.detach().item()
