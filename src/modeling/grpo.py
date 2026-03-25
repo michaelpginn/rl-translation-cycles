@@ -63,11 +63,18 @@ def _compute_grpo_loss(
         .to(model.device)
     )
     completion_lengths = encodings.attention_mask.sum(dim=-1) - prompt_lengths
+    if (completion_lengths <= 0).any():
+        logger.warning(
+            f"Zero/negative completion lengths: {completion_lengths.tolist()}"
+        )
     labels = encodings.input_ids[:, 1:]
     mask = encodings.attention_mask[:, 1:]
     mask *= torch.arange(labels.size(-1), device=labels.device).unsqueeze(
         0
     ) >= labels.size(-1) - completion_lengths.unsqueeze(1)
+    if mask.sum() == 0:
+        logger.warning("Skipping loss computation because mask is all 0s!")
+        return torch.tensor(0.0, device=model.device, requires_grad=True), None
 
     # Compute prob ratio (first term)
     log_mem(f"grpo_loss_before_policy_fwd (n_seqs={len(prompts)})")
@@ -186,14 +193,13 @@ def run_grpo_step(
     log_mem("after_all_generation")
 
     # Step 4: GRPO loss for backward step (target -> eng)
-    eps = 1e-4
     bwd_loss = 0.0
     bwd_kl_div = 0.0
 
     bwd_std = backward_rewards.std(dim=-1, keepdim=True).clamp(min=1e-8)
     bwd_advantages = (
         backward_rewards - backward_rewards.mean(dim=-1, keepdim=True)
-    ) / (bwd_std + eps)
+    ) / bwd_std
     flat_bwd_advantages = bwd_advantages.reshape(-1)
 
     if config.alpha > 0:
@@ -232,7 +238,7 @@ def run_grpo_step(
 
     fwd_std = forward_rewards.std(dim=-1, keepdim=True).clamp(min=1e-8)
     fwd_advantages = (forward_rewards - forward_rewards.mean(dim=-1, keepdim=True)) / (
-        fwd_std + eps
+        fwd_std
     )
     flat_fwd_advantages = fwd_advantages.reshape(-1)
 
