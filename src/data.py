@@ -4,6 +4,7 @@ import csv
 import logging
 import re
 from pathlib import Path
+from pprint import pformat
 from typing import Literal
 
 import pandas as pd
@@ -22,21 +23,27 @@ with open(_LANGS_CSV) as _f:
 
 
 sentence_regex = r"(?<=[.?!\"])\s+([A-Z](?:[A-Za-z0-9,\s\:\"\'\/\-\\]+)[.?!]+\"?)"
+words_with_periods = {"mr.", "dr.", "mrs.", "etc."}  # TODO: expand
 
 
 def _extract_sentences(text: str, max_len: int, tokenizer) -> list[str]:
     """Split text into sentences and filter by length."""
     # Simple sentence splitting on period/question/exclamation followed by space
-    # TODO: Fix edge cases (Dr., Mr., etc)
     sentences = re.findall(sentence_regex, text.strip(), flags=re.DOTALL | re.MULTILINE)
     # sentences = re.split(r"(?<=[.!?])\s+", text.strip())
     result = []
     for s in sentences:
         s = s.strip()
-        words = s.split()
+        words: list[str] = s.split()
         num_tokens = len(tokenizer(s)["input_ids"])
-        if 5 <= len(words) and num_tokens < max_len and s[-1] in ".!?":
-            result.append(s)
+        if (
+            len(words) < 5
+            or num_tokens >= max_len
+            or s[-1] not in ".!?"
+            or words[-1].lower() in words_with_periods
+        ):
+            continue
+        result.append(s)
     return result
 
 
@@ -67,6 +74,7 @@ class FineWebTrainDataset(Dataset):  # type: ignore[type-arg]
             sentences.extend(extracted)
         self.sentences = sentences[: config.train_num_sentences]
         logger.info(f"Loaded {len(self.sentences)} English sentences for training")
+        logger.info(f"First twenty sentences: {pformat(self.sentences[:20])}")
 
     def __len__(self) -> int:
         return len(self.sentences)

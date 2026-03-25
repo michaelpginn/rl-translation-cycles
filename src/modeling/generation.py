@@ -37,7 +37,7 @@ def sample_completions(
         expanded_prompts,
         return_tensors="pt",
         padding=True,
-        truncation=True,
+        truncation=False,
     ).to(model.device)
 
     prompt_len = inputs.input_ids.shape[1]
@@ -79,7 +79,7 @@ def greedy_decode(
         prompts,
         return_tensors="pt",
         padding=True,
-        truncation=True,
+        truncation=False,
     ).to(model.device)
     prompt_len = inputs.input_ids.shape[1]
     outputs = model.generate(

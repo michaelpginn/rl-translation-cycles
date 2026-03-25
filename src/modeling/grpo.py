@@ -48,7 +48,7 @@ def _compute_grpo_loss(
         full_texts,
         return_tensors="pt",
         padding=True,
-        truncation=True,
+        truncation=False,
         max_length=config.max_tokens,
     ).to(model.device)
     prompt_lengths = (
@@ -56,7 +56,7 @@ def _compute_grpo_loss(
             prompts,
             return_tensors="pt",
             padding=True,
-            truncation=True,
+            truncation=False,
             max_length=config.max_tokens,
         )
         .attention_mask.sum(dim=-1)
@@ -152,6 +152,8 @@ def run_grpo_step(
             top_p=config.grpo_top_p,
         )
     log_mem("after_fwd_generation")
+
+    breakpoint()
 
     # Step 2: Back translation (target -> eng) for each forward candidate
     all_back_texts: list[list[list[str]]] = []  # [batch, g_fwd, g_bwd]
