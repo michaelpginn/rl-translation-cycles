@@ -157,8 +157,7 @@ def train(
                     if (
                         config.eval_every_n_steps > 0
                         and result.get("example_rows")
-                        and total_optimizer_steps % (config.eval_every_n_steps * 10)
-                        == 0
+                        and total_optimizer_steps % (config.eval_every_n_steps * 2) == 0
                     ):
                         table = wandb.Table(
                             columns=[
