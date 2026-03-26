@@ -153,8 +153,6 @@ def run_grpo_step(
         )
     log_mem("after_fwd_generation")
 
-    breakpoint()
-
     # Step 2: Back translation (target -> eng) for each forward candidate
     all_back_texts: list[list[list[str]]] = []  # [batch, g_fwd, g_bwd]
     all_bwd_prompts = []  # flat list for loss computation
