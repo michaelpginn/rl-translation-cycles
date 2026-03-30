@@ -1,0 +1,25 @@
+model = "Qwen/Qwen3.5-9B"
+max_steps = 500
+
+batch_size = 512
+rollouts_per_example = 16
+learning_rate = 1e-6
+
+[sampling]
+max_tokens = 256
+temperature = 0.7
+
+[[env]]
+id = "michaelginn/translation-cycles"
+args = { target_lang = "deu_Latn", num_sentences = 10000 }
+
+[wandb]
+project = "rl-translation-cycles-prime"
+entity = "lecs-general"
+
+[checkpoints]
+interval = 100
+keep_cloud = 3
+
+[infrastructure]
+compute_size = "L"

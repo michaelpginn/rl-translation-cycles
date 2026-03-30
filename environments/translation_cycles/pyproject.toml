@@ -1,0 +1,22 @@
+[project]
+name = "translation-cycles"
+description = "Cycle-consistency translation environment: English -> target language -> English, scored by chrF/BLEU."
+tags = ["translation", "cycle-consistency", "train", "eval"]
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+    "verifiers>=0.1.11",
+    "datasets>=2.14,<4",
+    "sacrebleu>=2.6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+include = ["translation_cycles.py", "pyproject.toml"] 
+
+[tool.verifiers.eval]
+num_examples = 5
+rollouts_per_example = 3
