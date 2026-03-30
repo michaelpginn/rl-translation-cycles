@@ -28,7 +28,7 @@ class ExperimentConfig:
         0.2  # Not used for now, used if doing multiple updates/rollout
     )
     reward_metric: Literal["bleu", "chrf"] = "chrf"
-    alpha: float = 0.5  # weight for forward translation reward
+    alpha: float = 0.5  # weight for backward translation reward
 
     # Training
     max_epochs: int = 3

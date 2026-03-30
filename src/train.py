@@ -152,6 +152,7 @@ def train(
                             "lr": scheduler.get_last_lr()[0],
                             **result["metrics"],
                             "grad_norm": grad_norm,
+                            "epoch": epoch + 1,
                         },
                     }
                     if (
