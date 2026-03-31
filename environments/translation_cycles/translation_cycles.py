@@ -215,15 +215,15 @@ class TranslationCyclesEnv(vf.MultiTurnEnv):
 
     def __init__(self, metric: str = "chrf", **kwargs):
         self._metric = metric
+        self.parser = vf.MaybeThinkParser()
         super().__init__(**kwargs)
 
     async def env_response(
-        self, messages: vf.Messages, state: vf.State
+        self, messages: vf.Messages, state: vf.State, **kwargs
     ) -> vf.Messages:
         # The last assistant message is the forward translation.
         # Strip thinking tokens (e.g. <think>…</think>) before using as input.
-        raw_content = messages[-1]["content"].strip()
-        forward_translation = re.sub(r"<think>.*?</think>", "", raw_content, flags=re.DOTALL).strip()
+        forward_translation = self.parser.parse_answer(messages)
         # Retrieve lang_name from state (set in setup_state from info).
         info_raw = state.get("info", {})
         info = json.loads(info_raw) if isinstance(info_raw, str) else info_raw
@@ -275,13 +275,14 @@ def load_environment(
         )
     dataset = Dataset.from_list(rows)
 
+    parser = vf.MaybeThinkParser()
+
     # --- Rubric -----------------------------------------------------------
     async def cycle_consistency_reward(completion, answer, info) -> float:
         """Score the back-translated English against the original."""
-        raw_back = completion[-1]["content"].strip()
-        back_translated = re.sub(r"<think>.*?</think>", "", raw_back, flags=re.DOTALL).strip()
+        back_translated = parser.parse_answer(completion)
         scores = _compute_sentence_metric([back_translated], [answer], metric=metric)
-        return scores[0] / 100.0
+        return scores[0]
 
     rubric = vf.Rubric(funcs=[cycle_consistency_reward])
 
