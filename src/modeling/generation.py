@@ -52,6 +52,7 @@ def sample_completions(
         return_dict_in_generate=True,
         stop_strings=["\n"],
         tokenizer=tokenizer,
+        pad_token_id=tokenizer.eos_token_id,
     )
     log_mem("sample_completions_after_generate")
 
@@ -88,6 +89,7 @@ def greedy_decode(
         do_sample=False,
         stop_strings=["\n"],
         tokenizer=tokenizer,
+        pad_token_id=tokenizer.eos_token_id,
     )
     generated_ids = outputs[:, prompt_len:]
     decoded = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
