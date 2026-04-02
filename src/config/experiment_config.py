@@ -28,7 +28,8 @@ class ExperimentConfig:
         0.2  # Not used for now, used if doing multiple updates/rollout
     )
     reward_metric: Literal["bleu", "chrf"] = "chrf"
-    alpha: float = 0.5  # weight for backward translation reward
+    alpha: float = 0.5  # (1-alpha) * fwd_loss + alpha * bwd_loss
+    greedy_backward = False
 
     # Training
     max_epochs: int = 3
@@ -52,3 +53,9 @@ class ExperimentConfig:
     slurm_job_id: str | None = field(
         default_factory=lambda: os.environ.get("SLURM_JOB_ID")
     )
+
+    def __post_init__(self):
+        if self.greedy_backward and self.alpha > 0:
+            raise ValueError(
+                "Can only use greedy backward when not training backward pass (alpha == 0)!"
+            )

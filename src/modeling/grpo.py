@@ -8,7 +8,7 @@ from typing import Any
 import torch
 
 from src.config.experiment_config import ExperimentConfig
-from src.modeling.generation import sample_completions
+from src.modeling.generation import greedy_decode, sample_completions
 from src.modeling.mem_profile import log_mem
 from src.modeling.prompts import make_backward_prompt, make_forward_prompt
 from src.modeling.rewards import compute_cycle_rewards
@@ -157,26 +157,41 @@ def run_grpo_step(
     all_back_texts: list[list[list[str]]] = []  # [batch, g_fwd, g_bwd]
     all_bwd_prompts = []  # flat list for loss computation
     all_bwd_completions = []
-
     for i in range(batch_size):
-        group_back: list[list[str]] = []
-        for j in range(config.grpo_group_size):
-            bwd_prompt = make_backward_prompt(fwd_texts[i][j], config.language)
-            with torch.no_grad():
-                bwd_texts_ij, _ = sample_completions(
-                    model,
-                    tokenizer,
-                    prompts=[bwd_prompt],
-                    num_samples=config.grpo_group_size,
-                    max_new_tokens=config.max_tokens,
-                    temperature=config.grpo_temperature,
-                    top_p=config.grpo_top_p,
-                )
-            group_back.append(bwd_texts_ij[0])  # g back translations
-            all_bwd_prompts.extend([bwd_prompt] * config.grpo_group_size)
-            all_bwd_completions.extend(bwd_texts_ij[0])
-            log_mem(f"after_bwd_generation_i{i}_j{j}")
-        all_back_texts.append(group_back)
+        if not config.greedy_backward:
+            group_back: list[list[str]] = []
+            for j in range(config.grpo_group_size):
+                bwd_prompt = make_backward_prompt(fwd_texts[i][j], config.language)
+                with torch.no_grad():
+                    bwd_texts_ij, _ = sample_completions(
+                        model,
+                        tokenizer,
+                        prompts=[bwd_prompt],
+                        num_samples=config.grpo_group_size,
+                        max_new_tokens=config.max_tokens,
+                        temperature=config.grpo_temperature,
+                        top_p=config.grpo_top_p,
+                    )
+                group_back.append(bwd_texts_ij[0])  # g back translations
+                all_bwd_prompts.extend([bwd_prompt] * config.grpo_group_size)
+                all_bwd_completions.extend(bwd_texts_ij[0])
+                log_mem(f"after_bwd_generation_i{i}_j{j}")
+            all_back_texts.append(group_back)
+        else:
+            # Greedy, just a single
+            bwd_prompts = [
+                make_backward_prompt(fwd_text, config.language)
+                for fwd_text in fwd_texts[i]
+            ]
+            bwd_texts_i, _ = greedy_decode(
+                model,
+                tokenizer,
+                prompts=bwd_prompts,
+                max_new_tokens=config.max_tokens,
+            )
+            all_bwd_prompts.extend(bwd_prompts)
+            all_bwd_completions.extend(bwd_texts_i)
+            all_back_texts.append([[t] for t in bwd_texts_i])
 
     # Step 3: Compute rewards
     forward_rewards, backward_rewards = compute_cycle_rewards(
