@@ -29,7 +29,7 @@ class ExperimentConfig:
     )
     reward_metric: Literal["bleu", "chrf"] = "chrf"
     alpha: float = 0.5  # (1-alpha) * fwd_loss + alpha * bwd_loss
-    greedy_backward = False
+    greedy_backward: bool = False
 
     # Training
     max_epochs: int = 3
