@@ -1,6 +1,6 @@
 [project]
-name = "translation-cycles"
-description = "Cycle-consistency translation environment: English -> target language -> English, scored by chrF/BLEU."
+name = "flores-eval"
+description = "FLORES eval environment"
 tags = ["translation", "cycle-consistency", "train", "eval"]
 version = "0.1.0"
 requires-python = ">=3.10"
@@ -8,7 +8,8 @@ dependencies = [
     "verifiers>=0.1.11",
     "datasets>=2.14,<4",
     "sacrebleu>=2.6.0",
-    "nltk==3.9.4"
+    "nltk==3.9.4",
+    "pandas==3.0.0"
 ]
 
 [build-system]
@@ -16,8 +17,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-include = ["translation_cycles.py", "pyproject.toml"]
+include = ["flores_eval.py", "pyproject.toml"]
 
-[tool.verifiers.eval]
-num_examples = 5
-rollouts_per_example = 3
+[tool.prime]
+secrets = ["HF_TOKEN_FLORES"]

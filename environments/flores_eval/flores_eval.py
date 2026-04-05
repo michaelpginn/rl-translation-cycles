@@ -13,12 +13,14 @@ Dataset: sentences streamed from FineWeb (HuggingFaceFW/fineweb, sample-10BT).
 from __future__ import annotations
 
 import json
+import os
 from typing import Literal
 
-import nltk
+import pandas as pd
 import sacrebleu
 import verifiers as vf
 from datasets import Dataset, load_dataset
+from huggingface_hub import login
 
 # ---------------------------------------------------------------------------
 # Language-name lookup (mirrors src/data.py LANG_NAMES, replicated here so
@@ -113,39 +115,23 @@ LANG_NAMES: dict[str, str] = {
     "zul_Latn": "Zulu",
 }
 
-# ---------------------------------------------------------------------------
-# Sentence extraction (mirrors src/data.py _extract_sentences, replicated
-# here without tokenizer — uses a word-count proxy for the length limit).
-# ---------------------------------------------------------------------------
 
-_MAX_WORDS = 90  # proxy for max_tokens=128 from the original code
-
-
-def _extract_sentences(text: str) -> list[str]:
-    sentences = nltk.sent_tokenize(text)
-    result = []
-    for s in sentences:
-        s = s.strip()
-        words = s.split()
-        if len(words) < 5 or len(words) >= _MAX_WORDS:
-            continue
-        result.append(s)
-    return result
-
-
-def _load_fineweb_sentences(num_sentences: int, seed: int) -> list[str]:
-    ds = load_dataset(
-        "HuggingFaceFW/fineweb",
-        name="sample-10BT",
-        split="train",
-        streaming=True,
-    )
-    sentences: list[str] = []
-    for example in ds:
-        if len(sentences) >= num_sentences:
-            break
-        sentences.extend(_extract_sentences(example["text"]))  # type: ignore[index]
-    return sentences[:num_sentences]
+def _load_flores(language: str, split: str):
+    eng = load_dataset(
+        "openlanguagedata/flores_plus",
+        "eng_Latn",
+        # trust_remote_code=True,
+        split=split,
+    ).to_pandas()  # type:ignore
+    tgt = load_dataset(
+        "openlanguagedata/flores_plus",
+        language,
+        # trust_remote_code=True,
+        split=split,
+    ).to_pandas()  # type:ignore
+    eng["text"] = eng["text"].str.replace("\xa0", " ")  # type:ignore
+    tgt["text"] = tgt["text"].str.replace("\xa0", " ")  # type:ignore
+    return pd.merge(tgt, eng, on=["id", "split"], suffixes=("_tgt", "_eng"))  # type:ignore
 
 
 # ---------------------------------------------------------------------------
@@ -167,12 +153,6 @@ def _make_backward_prompt(sentence: str, lang_name: str) -> str:
     )
 
 
-# ---------------------------------------------------------------------------
-# Reward (mirrors src/modeling/rewards.py compute_sentence_metric,
-# replicated here).
-# ---------------------------------------------------------------------------
-
-
 def _compute_sentence_metric(
     predictions: list[str],
     references: list[str],
@@ -189,75 +169,44 @@ def _compute_sentence_metric(
     return scores
 
 
-# ---------------------------------------------------------------------------
-# Environment
-# ---------------------------------------------------------------------------
-
-
-class TranslationCyclesEnv(vf.MultiTurnEnv):
-    """2-turn cycle-consistency translation environment.
-
-    Turn 1: English -> target language
-    Turn 2: target language -> English (back-translation)
-    """
-
-    def __init__(self, metric: str = "chrf", **kwargs):
-        self._metric = metric
-        self.parser = vf.MaybeThinkParser()
-        super().__init__(**kwargs)
-
-    async def env_response(
-        self, messages: vf.Messages, state: vf.State, **kwargs
-    ) -> vf.Messages:
-        # The last assistant message is the forward translation.
-        # Strip thinking tokens (e.g. <think>…</think>) before using as input.
-        forward_translation = self.parser.parse_answer(messages)
-        assert isinstance(forward_translation, str)
-        # Retrieve lang_name from state (set in setup_state from info).
-        info_raw = state.get("info", {})
-        info = json.loads(info_raw) if isinstance(info_raw, str) else info_raw
-        lang_name = info.get("lang_name", "the target language")
-        backward_prompt = _make_backward_prompt(forward_translation, lang_name)
-        new_messages: vf.Messages = [vf.UserMessage(content=backward_prompt)]
-        return new_messages
-
-
-# ---------------------------------------------------------------------------
-# load_environment
-# ---------------------------------------------------------------------------
-
-
 def load_environment(
     target_lang: str = "deu_Latn",
-    num_sentences: int = 10000,
     metric: Literal["chrf", "bleu"] = "chrf",
+    split: Literal["dev", "devtest"] = "dev",
+    direction: Literal["forward", "backward"] = "forward",
     seed: int = 42,
 ) -> vf.Environment:
     """Load the cycle-consistency translation environment.
 
     Args:
         target_lang: FLORES-200 language code for the target language.
-        num_sentences: Number of FineWeb sentences to stream for the dataset.
         metric: Scoring metric — "chrf" (default) or "bleu".
+        split: dev or devtest
         seed: Random seed (reserved for future shuffling).
     """
+    vf.ensure_keys(["HF_TOKEN_FLORES"])
+    login(token=os.environ["HF_TOKEN_FLORES"])
+
     if target_lang not in LANG_NAMES:
         raise ValueError(
             f"Unknown target_lang {target_lang!r}. "
             f"Supported codes: {sorted(LANG_NAMES)}"
         )
     lang_name = LANG_NAMES[target_lang]
-
-    # --- Dataset ----------------------------------------------------------
-    sentences = _load_fineweb_sentences(num_sentences, seed)
+    sentences = _load_flores(target_lang, split)
 
     rows = []
-    for sentence in sentences:
-        forward_prompt = _make_forward_prompt(sentence, lang_name)
+    for _, sentence in sentences.iterrows():
+        if direction == "forward":
+            prompt = _make_forward_prompt(sentence["txt_eng"], lang_name)  # type:ignore
+            answer = sentence["txt_tgt"]
+        else:
+            prompt = _make_backward_prompt(sentence["txt_tgt"], lang_name)  # type:ignore
+            answer = sentence["txt_eng"]
         rows.append(
             {
-                "prompt": [{"role": "user", "content": forward_prompt}],
-                "answer": sentence,
+                "prompt": [{"role": "user", "content": prompt}],
+                "answer": answer,
                 "info": json.dumps(
                     {"target_lang": target_lang, "lang_name": lang_name}
                 ),
@@ -267,20 +216,11 @@ def load_environment(
 
     parser = vf.MaybeThinkParser()
 
-    # --- Rubric -----------------------------------------------------------
-    async def cycle_consistency_reward(completion, answer, info) -> float:
-        """Score the back-translated English against the original."""
-        back_translated = parser.parse_answer(completion)
-        assert isinstance(back_translated, str)
-        scores = _compute_sentence_metric([back_translated], [answer], metric=metric)
+    async def translation_metric(completion, answer) -> float:
+        translation = parser.parse_answer(completion)
+        assert isinstance(translation, str)
+        scores = _compute_sentence_metric([translation], [answer], metric=metric)
         return scores[0]
 
-    rubric = vf.Rubric(funcs=[cycle_consistency_reward])
-
-    # --- Environment ------------------------------------------------------
-    return TranslationCyclesEnv(
-        metric=metric,
-        dataset=dataset,
-        rubric=rubric,
-        max_turns=2,
-    )
+    rubric = vf.Rubric(funcs=[translation_metric])
+    return vf.SingleTurnEnv(dataset=dataset, rubric=rubric)
