@@ -32,7 +32,7 @@ def evaluate_correlation(
     gs = config.grpo_group_size
     loader = DataLoader(
         dataset,
-        batch_size=2 * config.batch_size * (config.grpo_group_size),
+        batch_size=config.batch_size * config.grpo_group_size,
         shuffle=False,
     )
     model.eval()
