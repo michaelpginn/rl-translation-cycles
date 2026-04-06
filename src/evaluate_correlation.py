@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import pathlib
 from collections import defaultdict
 from typing import Any
 
@@ -15,6 +17,8 @@ from src.modeling.generation import greedy_decode, sample_completions
 from src.modeling.prompts import make_backward_prompt, make_forward_prompt
 from src.modeling.rewards import compute_sentence_metric
 
+logger = logging.getLogger(__name__)
+
 
 def evaluate_correlation(
     model: Any,
@@ -25,11 +29,10 @@ def evaluate_correlation(
 ):
     if dist_config.distributed:
         raise NotImplementedError()
-    bs = 2 * config.batch_size * (config.grpo_group_size**2)
     gs = config.grpo_group_size
     loader = DataLoader(
         dataset,
-        batch_size=bs,
+        batch_size=2 * config.batch_size * (config.grpo_group_size**2),
         shuffle=False,
     )
     model.eval()
@@ -37,6 +40,7 @@ def evaluate_correlation(
     for batch in tqdm(loader, desc="Evaluating", disable=not dist_config.is_main):
         eng_sentences = batch["eng"]
         tgt_sentences = batch["tgt"]
+        bs = len(eng_sentences)
 
         fwd_prompts = [make_forward_prompt(s, config.language) for s in eng_sentences]
         fwd_preds, _ = sample_completions(
@@ -92,4 +96,6 @@ def evaluate_correlation(
             round_trip_scores_norm = round_trip_scores_norm.reshape(bs * gs).tolist()
             metrics[f"roundtrip_{metric}"].extend(round_trip_scores_norm)
     df = pandas.DataFrame.from_dict(metrics)
-    df.to_csv(f"{config.language}_metrics.csv")
+    path = pathlib.Path(f"{config.language}_metrics.csv")
+    df.to_csv(path)
+    logger.info(f"Wrote metrics to {path.resolve()}")
