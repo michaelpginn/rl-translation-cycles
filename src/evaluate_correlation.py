@@ -37,6 +37,7 @@ def evaluate_correlation(
     )
     model.eval()
     metrics: dict[str, list[float]] = defaultdict(list)
+    running_idx = 0
     for batch in tqdm(loader, desc="Evaluating", disable=not dist_config.is_main):
         eng_sentences = batch["eng"]
         tgt_sentences = batch["tgt"]
@@ -95,6 +96,11 @@ def evaluate_correlation(
             ) / round_trip_scores.std(dim=-1, keepdim=True)
             round_trip_scores_norm = round_trip_scores_norm.reshape(bs * gs).tolist()
             metrics[f"roundtrip_{metric}"].extend(round_trip_scores_norm)
+        sent_indices = []
+        for idx in range(running_idx, running_idx + bs):
+            sent_indices.extend([idx] * gs)
+        running_idx = running_idx + bs
+        metrics["sent_idx"].extend(sent_indices)
     df = pandas.DataFrame.from_dict(metrics)
     path = pathlib.Path(f"{config.language}_metrics.csv")
     df.to_csv(path)
