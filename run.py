@@ -8,14 +8,14 @@ import random
 from typing import Any
 
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
 import wandb
 from src.config import ExperimentConfig, config_to_dataclass
 from src.data import FloresEvalDataset
 from src.distributed import cleanup_distributed, setup_distributed
 from src.evaluate import evaluate
+from src.evaluate_correlation import evaluate_correlation
 from src.train import train
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 def main() -> None:
@@ -99,6 +99,9 @@ def main() -> None:
             )
             if dist_config.is_main:
                 wandb.log({"dev": dev_metrics, "devtest": devtest_metrics})
+        elif config.mode == "correlation":
+            # Correlational analysis between cycle consistency + main metric
+            evaluate_correlation(model, tokenizer, dev_dataset, config, dist_config)
         else:
             raise ValueError(f"Unknown mode: {config.mode}")
     finally:

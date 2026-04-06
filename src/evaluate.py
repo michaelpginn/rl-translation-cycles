@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 def generate(
-    model: Any,
-    tokenizer: Any,
+    model,
+    tokenizer,
     dataset: FloresEvalDataset,
     config: ExperimentConfig,
     dist_config: DistributedConfig,

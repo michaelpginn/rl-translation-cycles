@@ -5,7 +5,7 @@ from typing import Literal
 
 @dataclass
 class ExperimentConfig:
-    mode: Literal["train", "eval"]
+    mode: Literal["train", "eval", "correlation"]
     language: str
     pretrained_model: str = "Qwen/Qwen3-0.6B"
 
