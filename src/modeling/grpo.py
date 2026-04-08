@@ -137,7 +137,7 @@ def generate_translations_and_rewards(
                 make_backward_prompt(fwd_text, config.language)
                 for fwd_text in fwd_texts[i]
             ]
-            bwd_texts_i, _ = greedy_decode(
+            bwd_texts_i = greedy_decode(
                 model,
                 tokenizer,
                 prompts=bwd_prompts,
