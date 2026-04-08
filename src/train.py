@@ -189,6 +189,7 @@ def train(
                             mean_reward += rewards.mean().item()
                             step_loss += loss.detach().item()
 
+                        unclipped_grad_norm = grad_norm(model)
                         torch.nn.utils.clip_grad_norm_(
                             model.parameters(), config.grad_norm
                         )
@@ -204,7 +205,7 @@ def train(
                             train_log = {
                                 "train": {
                                     "lr": scheduler.get_last_lr()[0],
-                                    "grad_norm": grad_norm(model),
+                                    "grad_norm": unclipped_grad_norm,
                                     "epoch": epoch + 1,
                                     "loss": step_loss / config.grad_acc_steps,
                                     "kl_div": mean_kl_div / config.grad_acc_steps,
