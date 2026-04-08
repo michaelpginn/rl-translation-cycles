@@ -28,14 +28,14 @@ class ExperimentConfig:
         0.2  # Not used for now, used if doing multiple updates/rollout
     )
     reward_metric: Literal["bleu", "chrf"] = "chrf"
-    alpha: float = 0.5  # (1-alpha) * fwd_loss + alpha * bwd_loss
     greedy_backward: bool = False
 
     # Training
     max_epochs: int = 3
     learning_rate: float = 1e-5
     batch_size: int = 4
-    gradient_accumulation_steps: int = 4
+    grad_acc_steps: int = 4
+    inner_update_steps: int = 2  # Number of "inner updates" per sample of rollouts
     grad_norm: float = 1.0
     optimizer: str = "adamw"
     warmup_steps: int = 100
@@ -53,9 +53,3 @@ class ExperimentConfig:
     slurm_job_id: str | None = field(
         default_factory=lambda: os.environ.get("SLURM_JOB_ID")
     )
-
-    def __post_init__(self):
-        if self.greedy_backward and self.alpha > 0:
-            raise ValueError(
-                "Can only use greedy backward when not training backward pass (alpha == 0)!"
-            )

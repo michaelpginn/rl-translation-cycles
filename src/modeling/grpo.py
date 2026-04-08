@@ -16,128 +16,82 @@ from src.modeling.rewards import compute_cycle_rewards
 logger = logging.getLogger(__name__)
 
 
-def _compute_grpo_loss(
+# fwd_std = forward_rewards.std(dim=-1, keepdim=True).clamp(min=1e-8)
+# fwd_advantages = (forward_rewards - forward_rewards.mean(dim=-1, keepdim=True)) / (
+#     fwd_std
+# )
+# flat_fwd_advantages = fwd_advantages.reshape(-1)
+
+# if config.alpha < 1:
+#     fwd_loss, fwd_kl_div = _compute_grpo_loss(
+#         model,
+#         ref_model,
+#         tokenizer,
+#         flat_fwd_prompts,
+#         flat_fwd_completions,
+#         flat_fwd_advantages,
+#         config,
+#     )
+#     fwd_loss /= config.gradient_accumulation_steps
+#     fwd_loss *= 1 - config.alpha
+#     log_mem("after_fwd_loss")
+#     fwd_loss.backward()
+#     fwd_loss = fwd_loss.detach().item()
+#     log_mem("after_fwd_loss_backward")
+#     fwd_kl_div = fwd_kl_div.mean().item() if fwd_kl_div is not None else 0.0
+# else:
+#     fwd_loss = 0.0
+#     fwd_kl_div = 0.0
+
+# # The total loss is detached and just for logging purposes
+# total_loss = fwd_loss + bwd_loss
+
+# # Build example table rows for wandb (up to 10 source sentences)
+# num_examples = min(10, batch_size)
+# g = config.grpo_group_size
+# example_rows = [
+#     [english_sentences[i], j, fwd_texts[i][j], k, all_back_texts[i][j][k]]
+#     for i in range(num_examples)
+#     for j in range(g)
+#     for k in range(g)
+# ]
+
+# normalized_fwd_rewards = forward_rewards / config.grpo_group_size
+# metrics = {
+#     "loss": total_loss,
+#     "fwd_loss": fwd_loss,
+#     "bwd_loss": bwd_loss,
+#     "mean_fwd_reward": normalized_fwd_rewards.mean().item(),
+#     "mean_bwd_reward": backward_rewards.mean().item(),
+#     "mean_total_reward": (
+#         normalized_fwd_rewards.mean() + backward_rewards.mean()
+#     ).item(),
+#     "fwd_kl_div": fwd_kl_div,
+#     "bwd_kl_div": bwd_kl_div,
+#     "mean_fwd_std": fwd_std.mean().item(),
+#     "mean_bwd_std": bwd_std.mean().item(),
+# }
+
+# return {"loss": total_loss, "metrics": metrics, "example_rows": example_rows}
+
+
+def generate_translations_and_rewards(
     model: Any,
-    ref_model: Any,
-    tokenizer: Any,
-    prompts: list[str],
-    completions: list[str],
-    advantages: torch.Tensor,
-    config: ExperimentConfig,
-) -> tuple[torch.Tensor, torch.Tensor | None]:
-    """Compute the DAPO policy gradient loss for a batch.
-
-    Uses sentence-level rewards distributed evenly over completion tokens.
-
-    Args:
-        model: the policy model being trained
-        ref_model: frozen reference model for KL penalty
-        tokenizer: tokenizer
-        prompts: list of prompt strings
-        completions: list of completion strings
-        flat_fwd_advantages: [batch_size] tensor of *normalized* rewards
-        beta: KL penalty coefficient
-        max_tokens: max sequence length
-
-    Returns:
-        loss (Tensor), kl_divergence (Tensor)
-    """
-    # Tokenize full sequences (prompt + completion)
-    full_texts = [p + " " + c for p, c in zip(prompts, completions)]
-    encodings = tokenizer(
-        full_texts,
-        return_tensors="pt",
-        padding=True,
-        truncation=False,
-        max_length=config.max_tokens,
-    ).to(model.device)
-    prompt_lengths = (
-        tokenizer(
-            prompts,
-            return_tensors="pt",
-            padding=True,
-            truncation=False,
-            max_length=config.max_tokens,
-        )
-        .attention_mask.sum(dim=-1)
-        .to(model.device)
-    )
-    completion_lengths = encodings.attention_mask.sum(dim=-1) - prompt_lengths
-    if (completion_lengths <= 0).any():
-        logger.warning(
-            f"Zero/negative completion lengths: {completion_lengths.tolist()}"
-        )
-    labels = encodings.input_ids[:, 1:]
-    mask = encodings.attention_mask[:, 1:]
-    mask *= torch.arange(labels.size(-1), device=labels.device).unsqueeze(
-        0
-    ) >= labels.size(-1) - completion_lengths.unsqueeze(1)
-    if mask.sum() == 0:
-        logger.warning("Skipping loss computation because mask is all 0s!")
-        return torch.tensor(0.0, device=model.device, requires_grad=True), None
-
-    # Compute prob ratio (first term)
-    log_mem(f"grpo_loss_before_policy_fwd (n_seqs={len(prompts)})")
-    logger.debug(f"Size of inputs: {encodings.input_ids.shape}")
-    policy_logits = model(**encodings).logits
-    policy_lse = policy_logits[:, :-1, :].logsumexp(dim=-1)
-    policy_chosen = policy_logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
-    policy_logprobs = policy_chosen - policy_lse
-    del policy_logits, policy_lse, policy_chosen
-    log_mem("grpo_loss_after_policy_fwd")
-    policy_probs = torch.exp(
-        policy_logprobs - policy_logprobs.detach()
-    ) * advantages.unsqueeze(1)
-
-    # Compute kl divergence (second term)
-    if config.grpo_beta > 0:
-        with torch.no_grad():
-            ref_logits = ref_model(**encodings).logits.detach()
-            ref_lse = ref_logits[:, :-1, :].logsumexp(dim=-1)
-            ref_chosen = ref_logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
-            ref_logprobs = ref_chosen - ref_lse
-            del ref_logits, ref_lse, ref_chosen
-        log_mem("grpo_loss_after_ref_fwd")
-        log_ref_ratio = policy_logprobs - ref_logprobs
-        kl_divergence = torch.exp(log_ref_ratio) - log_ref_ratio - 1
-        token_level_loss = -(policy_probs - config.grpo_beta * kl_divergence)
-    else:
-        kl_divergence = None
-        token_level_loss = -policy_probs
-    loss = (token_level_loss * mask).sum() / mask.sum()
-    return loss, kl_divergence
-
-
-def run_grpo_step(
-    model: Any,
-    ref_model: Any,
     tokenizer: Any,
     english_sentences: list[str],
     config: ExperimentConfig,
-) -> dict:
-    """Run one GRPO step on a batch of English sentences.
-
-    1. Generate g forward translations (eng -> target) per sentence
-    2. For each forward translation, generate g back translations (target -> eng)
-    3. Compute cycle-consistency rewards
-    4. Compute GRPO loss for both forward and backward steps
-    5. Run backward on losses
-    6. Return combined loss and metrics
-
-    Args:
-        model: policy model
-        ref_model: frozen reference model
-        tokenizer: tokenizer
-        english_sentences: batch of English sentences
-        target_lang: target language code
-        config: experiment config
+):
+    """Generates translations and computes round-trip rewards.
 
     Returns:
-        dict with 'loss' tensor and various metrics
+        - fwd_prompts (list[str]): (bs,) list of forward prompts
+        - fwd_texts (list[list[str]]): (bs, gs) list of predicted forward translations
+        - bwd_texts (list[list[list[str]]]): (bs, gs, 1 or gs) list of 1 or multiple backtranslations
+        - rewards (Tensor): (bs, gs) unnormalized float rewards
     """
     batch_size = len(english_sentences)
 
-    # Step 1: Forward translation (eng -> target)
+    # 1. Forward translation (eng -> target)
     log_mem("grpo_step_start")
     model.eval()
     fwd_prompts = [make_forward_prompt(s, config.language) for s in english_sentences]
@@ -153,7 +107,7 @@ def run_grpo_step(
         )
     log_mem("after_fwd_generation")
 
-    # Step 2: Back translation (target -> eng) for each forward candidate
+    # 2. Back translation (target -> eng) for each forward candidate
     all_back_texts: list[list[list[str]]] = []  # [batch, g_fwd, g_bwd]
     all_bwd_prompts = []  # flat list for loss computation
     all_bwd_completions = []
@@ -178,7 +132,7 @@ def run_grpo_step(
                 log_mem(f"after_bwd_generation_i{i}_j{j}")
             all_back_texts.append(group_back)
         else:
-            # Greedy, just a single
+            # Greedy, just a single backtrans
             bwd_prompts = [
                 make_backward_prompt(fwd_text, config.language)
                 for fwd_text in fwd_texts[i]
@@ -193,118 +147,103 @@ def run_grpo_step(
             all_bwd_completions.extend(bwd_texts_i)
             all_back_texts.append([[t] for t in bwd_texts_i])
 
-    # Step 3: Compute rewards
-    forward_rewards, backward_rewards = compute_cycle_rewards(
+    # 3. Compute rewards
+    forward_rewards, _ = compute_cycle_rewards(
         english_sentences,
         fwd_texts,
         all_back_texts,
         metric=config.reward_metric,
     )
     forward_rewards = forward_rewards.to(model.device)
-    backward_rewards = backward_rewards.to(model.device)
+    return fwd_prompts, fwd_texts, all_back_texts, forward_rewards
 
-    torch.cuda.empty_cache()
-    model.train()
-    log_mem("after_all_generation")
 
-    # Step 4: GRPO loss for backward step (target -> eng)
-    bwd_loss = 0.0
-    bwd_kl_div = 0.0
+def compute_logprobs(
+    model: Any,
+    tokenizer: Any,
+    prompts: list[str],
+    completions: list[list[str]],
+    with_grad: bool,
+    config: ExperimentConfig,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Computes gradient-free logprobs for a list of prompts and nested list of completions.
 
-    bwd_std = backward_rewards.std(dim=-1, keepdim=True).clamp(min=1e-8)
-    bwd_advantages = (
-        backward_rewards - backward_rewards.mean(dim=-1, keepdim=True)
-    ) / bwd_std
-    flat_bwd_advantages = bwd_advantages.reshape(-1)
-
-    if config.alpha > 0:
-        # Run in batches so we use a constant amount of mem
-        for group_idx in range(config.grpo_group_size):
-            start_idx = group_idx * config.grpo_group_size * batch_size
-            end_idx = (group_idx + 1) * config.grpo_group_size * batch_size
-            group_bwd_loss, group_bwd_kl_div = _compute_grpo_loss(
-                model,
-                ref_model,
-                tokenizer,
-                all_bwd_prompts[start_idx:end_idx],
-                all_bwd_completions[start_idx:end_idx],
-                flat_bwd_advantages[start_idx:end_idx],
-                config,
-            )
-            group_bwd_loss /= config.gradient_accumulation_steps
-            group_bwd_loss *= config.alpha
-            log_mem(f"after_bwd_loss_g{group_idx}")
-            group_bwd_loss.backward()
-            bwd_loss += group_bwd_loss.detach().item()
-            log_mem(f"after_bwd_loss_g{group_idx}_backward")
-            bwd_kl_div += (
-                group_bwd_kl_div.mean().item() if group_bwd_kl_div is not None else 0
-            )
-        bwd_kl_div /= config.grpo_group_size
-        log_mem("after_all_bwd_loss")
-
-    # Step 5: GRPO loss for forward step (eng -> target)
-    flat_fwd_prompts = []
-    flat_fwd_completions = []
-    for i in range(batch_size):
-        for j in range(config.grpo_group_size):
-            flat_fwd_prompts.append(fwd_prompts[i])
-            flat_fwd_completions.append(fwd_texts[i][j])
-
-    fwd_std = forward_rewards.std(dim=-1, keepdim=True).clamp(min=1e-8)
-    fwd_advantages = (forward_rewards - forward_rewards.mean(dim=-1, keepdim=True)) / (
-        fwd_std
-    )
-    flat_fwd_advantages = fwd_advantages.reshape(-1)
-
-    if config.alpha < 1:
-        fwd_loss, fwd_kl_div = _compute_grpo_loss(
-            model,
-            ref_model,
-            tokenizer,
-            flat_fwd_prompts,
-            flat_fwd_completions,
-            flat_fwd_advantages,
-            config,
+    Returns:
+        - policy_logprobs: (bs * gs, seq) tensor of log probs
+        - mask: (bs * gs, seq) mask for completion
+    """
+    flat_prompts = [p for p in prompts for _ in range(config.grpo_group_size)]
+    flat_completions = [c for group in completions for c in group]
+    full_texts = [p + " " + c for p, c in zip(flat_prompts, flat_completions)]
+    encodings = tokenizer(
+        full_texts,
+        return_tensors="pt",
+        padding=True,
+        truncation=False,
+        max_length=config.max_tokens,
+    ).to(model.device)
+    prompt_lengths = (
+        tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=False,
+            max_length=config.max_tokens,
         )
-        fwd_loss /= config.gradient_accumulation_steps
-        fwd_loss *= 1 - config.alpha
-        log_mem("after_fwd_loss")
-        fwd_loss.backward()
-        fwd_loss = fwd_loss.detach().item()
-        log_mem("after_fwd_loss_backward")
-        fwd_kl_div = fwd_kl_div.mean().item() if fwd_kl_div is not None else 0.0
+        .attention_mask.sum(dim=-1)
+        .to(model.device)
+    )
+    completion_lengths = encodings.attention_mask.sum(dim=-1) - prompt_lengths
+    if (completion_lengths <= 0).any():
+        logger.warning(
+            f"Zero/negative completion lengths: {completion_lengths.tolist()}"
+        )
+    labels = encodings.input_ids[:, 1:]
+    mask: torch.Tensor = encodings.attention_mask[:, 1:]
+    mask *= torch.arange(labels.size(-1), device=labels.device).unsqueeze(
+        0
+    ) >= labels.size(-1) - completion_lengths.unsqueeze(1)
+    if mask.sum() == 0:
+        logger.warning("Skipping loss computation because mask is all 0s!")
+        return torch.tensor(0.0, device=model.device, requires_grad=True), mask
+
+    log_mem(f"grpo_loss_before_old_policy_fwd (n_seqs={len(prompts)})")
+    logger.debug(f"Size of inputs: {encodings.input_ids.shape}")
+    with torch.set_grad_enabled(with_grad):
+        policy_logits = model(**encodings).logits
+        policy_lse = policy_logits[:, :-1, :].logsumexp(dim=-1)
+        policy_chosen = policy_logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
+        policy_logprobs = policy_chosen - policy_lse
+        del policy_logits, policy_lse, policy_chosen
+    log_mem("grpo_loss_after_policy_fwd")
+    return policy_logprobs, mask
+
+
+def compute_grpo_loss(
+    policy_logprobs: torch.Tensor,
+    old_logprobs: torch.Tensor,
+    ref_logprobs: torch.Tensor,
+    mask: torch.Tensor,
+    rewards: torch.Tensor,
+    config: ExperimentConfig,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    advantages = (
+        (rewards - rewards.mean(dim=-1, keepdim=True))
+        / (rewards.std(dim=-1, keepdim=True).clamp(min=1e-8))
+    ).reshape(-1)  # (bs*gs,)
+    policy_ratio = torch.exp(policy_logprobs - old_logprobs)
+    pg_loss_term = policy_ratio * advantages.unsqueeze(1)
+    clipped_pg = torch.clamp(
+        policy_ratio, min=1 - config.grpo_epsilon, max=1 + config.grpo_epsilon
+    ) * advantages.unsqueeze(1)
+    pg_loss_term = torch.minimum(pg_loss_term, clipped_pg)
+
+    # Compute kl divergence (second term)
+    log_ref_ratio = policy_logprobs - ref_logprobs
+    kl_divergence = torch.exp(log_ref_ratio) - log_ref_ratio - 1
+    if config.grpo_beta > 0:
+        token_level_loss = -(clipped_pg - config.grpo_beta * kl_divergence)
     else:
-        fwd_loss = 0.0
-        fwd_kl_div = 0.0
-
-    # The total loss is detached and just for logging purposes
-    total_loss = fwd_loss + bwd_loss
-
-    # Build example table rows for wandb (up to 10 source sentences)
-    num_examples = min(10, batch_size)
-    g = config.grpo_group_size
-    example_rows = [
-        [english_sentences[i], j, fwd_texts[i][j], k, all_back_texts[i][j][k]]
-        for i in range(num_examples)
-        for j in range(g)
-        for k in range(g)
-    ]
-
-    normalized_fwd_rewards = forward_rewards / config.grpo_group_size
-    metrics = {
-        "loss": total_loss,
-        "fwd_loss": fwd_loss,
-        "bwd_loss": bwd_loss,
-        "mean_fwd_reward": normalized_fwd_rewards.mean().item(),
-        "mean_bwd_reward": backward_rewards.mean().item(),
-        "mean_total_reward": (
-            normalized_fwd_rewards.mean() + backward_rewards.mean()
-        ).item(),
-        "fwd_kl_div": fwd_kl_div,
-        "bwd_kl_div": bwd_kl_div,
-        "mean_fwd_std": fwd_std.mean().item(),
-        "mean_bwd_std": bwd_std.mean().item(),
-    }
-
-    return {"loss": total_loss, "metrics": metrics, "example_rows": example_rows}
+        token_level_loss = -clipped_pg
+    loss = (token_level_loss * mask).sum() / mask.sum()
+    return loss, kl_divergence
