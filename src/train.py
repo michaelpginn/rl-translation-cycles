@@ -273,6 +273,15 @@ def train(
                                     step=num_batch_rollouts,
                                 )
                             model.train()
+
+                    # Reset accumulators
+                    accumulated_prompts = []
+                    accumulated_completions = []
+                    accumulated_backtranslations = []
+                    accumulated_rewards = []
+                    old_logprobs = []
+                    logprobs_mask = []
+                    ref_logprobs = []
                 num_batch_rollouts += 1
 
                 if dist_config.is_main:
