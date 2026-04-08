@@ -184,7 +184,7 @@ def compute_logprobs(
     ).to(model.device)
     prompt_lengths = (
         tokenizer(
-            prompts,
+            flat_prompts,
             return_tensors="pt",
             padding=True,
             truncation=False,
