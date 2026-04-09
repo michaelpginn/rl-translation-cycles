@@ -316,7 +316,7 @@ def build_wandb_table(
     flattened_completions = [c for batch in acc_completions for c in batch]
     flattened_backtranslations = [b for batch in acc_backtranslations for b in batch]
     for prompt_idx in range(min(5, len(flattened_prompts))):
-        for compl_idx in range(len(flattened_completions)):
+        for compl_idx in range(len(flattened_completions[0])):
             row: list[str | int] = [
                 flattened_prompts[prompt_idx],
                 prompt_idx,
