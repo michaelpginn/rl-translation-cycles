@@ -218,37 +218,10 @@ def train(
                                 % (config.eval_every_n_steps * 2)
                                 == 0
                             ):
-                                example_outputs = []
-                                for prompt_idx in range(
-                                    min(5, len(accumulated_prompts))
-                                ):
-                                    for compl_idx in range(
-                                        len(accumulated_completions[0])
-                                    ):
-                                        example_outputs.append(
-                                            [
-                                                accumulated_prompts[prompt_idx],
-                                                prompt_idx,
-                                                accumulated_completions[prompt_idx][
-                                                    compl_idx
-                                                ],
-                                                compl_idx,
-                                                accumulated_backtranslations[
-                                                    prompt_idx
-                                                ][compl_idx][
-                                                    0
-                                                ],  # doesn't work if multiple backtransl
-                                            ]
-                                        )
-                                table = wandb.Table(
-                                    columns=[
-                                        "original_english",
-                                        "fwd_idx",
-                                        "predicted_target",
-                                        "bwd_idx",
-                                        "final_predicted_english",
-                                    ],
-                                    data=example_outputs,
+                                table = build_wandb_table(
+                                    accumulated_prompts,
+                                    accumulated_completions,
+                                    accumulated_backtranslations,
                                 )
                                 train_log["train/examples"] = table  # type:ignore
                             wandb.log(train_log, step=total_optimizer_steps)
@@ -324,3 +297,43 @@ def grad_norm(model):
         grad_norm += param_norm.item() ** 2
     grad_norm = grad_norm**0.5
     return grad_norm
+
+
+def build_wandb_table(
+    acc_prompts: list[list[str]],
+    acc_completions: list[list[list[str]]],
+    acc_backtranslations: list[list[list[list[str]]]],
+):
+    """Builds wandb table from first 5 prompts.
+
+    Args:
+        acc_prompts:     (num_batches, batch_size)
+        acc_completions: (num_batches, batch_size, group_size)
+        acc_completions: (num_batches, batch_size, group_size, 1 | group_size)
+    """
+    example_outputs: list[list[str | int]] = []
+    flattened_prompts = [p for batch in acc_prompts for p in batch]
+    flattened_completions = [c for batch in acc_completions for c in batch]
+    flattened_backtranslations = [b for batch in acc_backtranslations for b in batch]
+    for prompt_idx in range(min(5, len(flattened_prompts))):
+        for compl_idx in range(len(flattened_completions)):
+            row: list[str | int] = [
+                flattened_prompts[prompt_idx],
+                prompt_idx,
+                flattened_completions[prompt_idx][compl_idx],
+                compl_idx,
+                flattened_backtranslations[prompt_idx][compl_idx][
+                    0
+                ],  # doesn't work if multiple backtransl
+            ]
+            example_outputs.append(row)
+    return wandb.Table(
+        columns=[
+            "original_english",
+            "fwd_idx",
+            "predicted_target",
+            "bwd_idx",
+            "final_predicted_english",
+        ],
+        data=example_outputs,
+    )
