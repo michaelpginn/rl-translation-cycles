@@ -251,7 +251,7 @@ def train(
                                     data=example_outputs,
                                 )
                                 train_log["train/examples"] = table  # type:ignore
-                            wandb.log(train_log, step=num_batch_rollouts)
+                            wandb.log(train_log, step=total_optimizer_steps)
                         pbar.update()
                         total_optimizer_steps += 1
 
@@ -270,7 +270,7 @@ def train(
                             if dist_config.is_main:
                                 wandb.log(
                                     {"dev": dev_metrics, "devtest": devtest_metrics},
-                                    step=num_batch_rollouts,
+                                    step=total_optimizer_steps,
                                 )
                             model.train()
 
@@ -303,7 +303,7 @@ def train(
                         "dev": dev_metrics,
                         "devtest": devtest_metrics,
                     },
-                    step=num_batch_rollouts,
+                    step=total_optimizer_steps,
                 )
                 ckpt_dir = os.path.join(config.models_dir, f"epoch_{epoch + 1}")
                 os.makedirs(ckpt_dir, exist_ok=True)
