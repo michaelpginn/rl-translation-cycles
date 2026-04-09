@@ -42,7 +42,7 @@ class ExperimentConfig:
     eval_every_n_steps: int = 50
 
     # Logging
-    wandb_project: str = "rl-translation-cycles"
+    wandb_project: str = "rl-translation-cycles-2"
     wandb_run_name: str | None = None
 
     # Checkpointing

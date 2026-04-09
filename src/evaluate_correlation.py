@@ -10,7 +10,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.config.experiment_config import ExperimentConfig
+from src.config.config import ExperimentConfig
 from src.data import FloresEvalDataset
 from src.distributed import DistributedConfig
 from src.modeling.generation import greedy_decode, sample_completions

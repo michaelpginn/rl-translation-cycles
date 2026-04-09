@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 
 import wandb
-from src.config.experiment_config import ExperimentConfig
+from src.config.config import ExperimentConfig
 from src.data import FineWebTrainDataset, FloresEvalDataset
 from src.distributed import DistributedConfig
 from src.evaluate import evaluate

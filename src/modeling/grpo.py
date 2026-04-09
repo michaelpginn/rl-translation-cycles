@@ -7,7 +7,7 @@ from typing import Any
 
 import torch
 
-from src.config.experiment_config import ExperimentConfig
+from src.config.config import ExperimentConfig
 from src.modeling.generation import greedy_decode, sample_completions
 from src.modeling.mem_profile import log_mem
 from src.modeling.prompts import make_backward_prompt, make_forward_prompt
