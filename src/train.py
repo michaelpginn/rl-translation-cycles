@@ -96,7 +96,10 @@ def train(
         wandb.log({"dev": dev_metrics, "devtest": devtest_metrics}, step=0)
 
     # Training loop
-    num_batch_rollouts = 0  # Unlike total_optimizer_steps, this is the real number of batches (# loss.backward() calls)
+    num_optimizer_steps = (
+        0  # Number of optimizer steps, ie multiple batches with grad acc
+    )
+    num_batch_rollouts = 0  # Unlike num_optimizer_steps, this is the real number of batches (# loss.backward() calls)
     pbar = tqdm(
         total=total_optimizer_steps,
         desc="Training",
@@ -157,7 +160,7 @@ def train(
 
                 # 3. Optimizer step every grad_acc steps
                 if (num_batch_rollouts + 1) % config.grad_acc_steps == 0:
-                    for _ in range(config.inner_update_steps):
+                    for inner_step_idx in range(config.inner_update_steps):
                         mean_kl_div = 0.0
                         mean_reward = 0.0
                         step_loss = 0.0
@@ -210,11 +213,12 @@ def train(
                                     "loss": step_loss / config.grad_acc_steps,
                                     "kl_div": mean_kl_div / config.grad_acc_steps,
                                     "reward": mean_reward / config.grad_acc_steps,
+                                    "inner_step_idx": inner_step_idx,
                                 },
                             }
                             if (
                                 config.eval_every_n_steps > 0
-                                and total_optimizer_steps
+                                and num_optimizer_steps
                                 % (config.eval_every_n_steps * 2)
                                 == 0
                             ):
@@ -224,14 +228,14 @@ def train(
                                     accumulated_backtranslations,
                                 )
                                 train_log["train/examples"] = table  # type:ignore
-                            wandb.log(train_log, step=total_optimizer_steps)
+                            wandb.log(train_log, step=num_optimizer_steps)
                         pbar.update()
-                        total_optimizer_steps += 1
+                        num_optimizer_steps += 1
 
                         # Periodic eval
                         if (
                             config.eval_every_n_steps > 0
-                            and total_optimizer_steps % config.eval_every_n_steps == 0
+                            and num_optimizer_steps % config.eval_every_n_steps == 0
                         ):
                             logger.info("Running intermediate evaluation...")
                             dev_metrics = evaluate(
@@ -243,7 +247,7 @@ def train(
                             if dist_config.is_main:
                                 wandb.log(
                                     {"dev": dev_metrics, "devtest": devtest_metrics},
-                                    step=total_optimizer_steps,
+                                    step=num_optimizer_steps,
                                 )
                             model.train()
 
@@ -276,7 +280,7 @@ def train(
                         "dev": dev_metrics,
                         "devtest": devtest_metrics,
                     },
-                    step=total_optimizer_steps,
+                    step=num_optimizer_steps,
                 )
                 ckpt_dir = os.path.join(config.models_dir, f"epoch_{epoch + 1}")
                 os.makedirs(ckpt_dir, exist_ok=True)
