@@ -105,6 +105,14 @@ def train(
         desc="Training",
         disable=not dist_config.is_main,
     )
+    accumulated_prompts: list[list[str]] = []
+    accumulated_completions: list[list[list[str]]] = []
+    accumulated_backtranslations: list[list[list[list[str]]]] = []
+    accumulated_rewards: list[torch.Tensor] = []
+    old_logprobs: list[torch.Tensor] = []
+    logprobs_mask: list[torch.Tensor] = []
+    ref_logprobs: list[torch.Tensor] = []
+
     with torch.amp.autocast_mode.autocast(
         dist_config.device_type, dtype=torch.bfloat16
     ):
@@ -114,14 +122,6 @@ def train(
             model.train()
             epoch_metrics = defaultdict(float)
             optimizer.zero_grad()
-
-            accumulated_prompts: list[list[str]] = []
-            accumulated_completions: list[list[list[str]]] = []
-            accumulated_backtranslations: list[list[list[list[str]]]] = []
-            accumulated_rewards: list[torch.Tensor] = []
-            old_logprobs: list[torch.Tensor] = []
-            logprobs_mask: list[torch.Tensor] = []
-            ref_logprobs: list[torch.Tensor] = []
 
             for batch_idx, english_sentences in enumerate(train_loader):
                 # 1. Generate rollouts
