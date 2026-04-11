@@ -162,7 +162,8 @@ def train(
                 if (num_batch_rollouts + 1) % config.grad_acc_steps == 0:
                     for inner_step_idx in range(config.inner_update_steps):
                         mean_kl_div = 0.0
-                        mean_reward = 0.0
+                        mean_bleu_reward = 0.0
+                        mean_chrf_reward = 0.0
                         step_loss = 0.0
 
                         for inner_batch_idx in range(config.grad_acc_steps):
@@ -189,7 +190,8 @@ def train(
 
                             # Track metrics
                             mean_kl_div += kl_div.mean().item()
-                            mean_reward += rewards.mean().item()
+                            mean_bleu_reward += rewards[0].mean().item()
+                            mean_chrf_reward += rewards[1].mean().item()
                             step_loss += loss.detach().item()
 
                         unclipped_grad_norm = grad_norm(model)
@@ -201,9 +203,12 @@ def train(
                         optimizer.zero_grad()
 
                         # Logging results
+                        mean_bleu_reward /= config.grad_acc_steps
+                        mean_chrf_reward /= config.grad_acc_steps
                         epoch_metrics["loss"] += step_loss / config.grad_acc_steps
                         epoch_metrics["kl_div"] += mean_kl_div / config.grad_acc_steps
-                        epoch_metrics["reward"] += mean_reward / config.grad_acc_steps
+                        epoch_metrics["reward_bleu"] += mean_bleu_reward
+                        epoch_metrics["reward_chrf"] += mean_chrf_reward
                         if dist_config.is_main:
                             train_log = {
                                 "train": {
@@ -212,7 +217,8 @@ def train(
                                     "epoch": epoch + 1,
                                     "loss": step_loss / config.grad_acc_steps,
                                     "kl_div": mean_kl_div / config.grad_acc_steps,
-                                    "reward": mean_reward / config.grad_acc_steps,
+                                    "reward_bleu": mean_bleu_reward,
+                                    "reward_chrf": mean_chrf_reward,
                                     "inner_step_idx": inner_step_idx,
                                 },
                             }
@@ -226,6 +232,7 @@ def train(
                                     accumulated_prompts,
                                     accumulated_completions,
                                     accumulated_backtranslations,
+                                    accumulated_rewards,
                                 )
                                 train_log["train/examples"] = table  # type:ignore
                             wandb.log(train_log, step=num_optimizer_steps)
@@ -307,6 +314,7 @@ def build_wandb_table(
     acc_prompts: list[list[str]],
     acc_completions: list[list[list[str]]],
     acc_backtranslations: list[list[list[list[str]]]],
+    acc_rewards: list[torch.Tensor],
 ):
     """Builds wandb table from first 5 prompts.
 
@@ -314,14 +322,18 @@ def build_wandb_table(
         acc_prompts:     (num_batches, batch_size)
         acc_completions: (num_batches, batch_size, group_size)
         acc_completions: (num_batches, batch_size, group_size, 1 | group_size)
+        acc_rewards:     (num_batches, 2, batch_size, group_size)
     """
-    example_outputs: list[list[str | int]] = []
+    example_outputs: list[list[str | int | float]] = []
     flattened_prompts = [p for batch in acc_prompts for p in batch]
     flattened_completions = [c for batch in acc_completions for c in batch]
     flattened_backtranslations = [b for batch in acc_backtranslations for b in batch]
+    flattened_rewards = torch.concat(acc_rewards, dim=1)
     for prompt_idx in range(min(5, len(flattened_prompts))):
         for compl_idx in range(len(flattened_completions[0])):
-            row: list[str | int] = [
+            bleu: float = flattened_rewards[0][prompt_idx][compl_idx].item()
+            chrf: float = flattened_rewards[0][prompt_idx][compl_idx].item()
+            row: list[str | int | float] = [
                 flattened_prompts[prompt_idx],
                 prompt_idx,
                 flattened_completions[prompt_idx][compl_idx],
@@ -329,6 +341,8 @@ def build_wandb_table(
                 flattened_backtranslations[prompt_idx][compl_idx][
                     0
                 ],  # doesn't work if multiple backtransl
+                bleu,
+                chrf,
             ]
             example_outputs.append(row)
     return wandb.Table(
@@ -338,6 +352,8 @@ def build_wandb_table(
             "predicted_target",
             "bwd_idx",
             "final_predicted_english",
+            "bleu",
+            "chrf",
         ],
         data=example_outputs,
     )

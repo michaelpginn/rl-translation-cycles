@@ -16,65 +16,6 @@ from src.modeling.rewards import compute_cycle_rewards
 logger = logging.getLogger(__name__)
 
 
-# fwd_std = forward_rewards.std(dim=-1, keepdim=True).clamp(min=1e-8)
-# fwd_advantages = (forward_rewards - forward_rewards.mean(dim=-1, keepdim=True)) / (
-#     fwd_std
-# )
-# flat_fwd_advantages = fwd_advantages.reshape(-1)
-
-# if config.alpha < 1:
-#     fwd_loss, fwd_kl_div = _compute_grpo_loss(
-#         model,
-#         ref_model,
-#         tokenizer,
-#         flat_fwd_prompts,
-#         flat_fwd_completions,
-#         flat_fwd_advantages,
-#         config,
-#     )
-#     fwd_loss /= config.gradient_accumulation_steps
-#     fwd_loss *= 1 - config.alpha
-#     log_mem("after_fwd_loss")
-#     fwd_loss.backward()
-#     fwd_loss = fwd_loss.detach().item()
-#     log_mem("after_fwd_loss_backward")
-#     fwd_kl_div = fwd_kl_div.mean().item() if fwd_kl_div is not None else 0.0
-# else:
-#     fwd_loss = 0.0
-#     fwd_kl_div = 0.0
-
-# # The total loss is detached and just for logging purposes
-# total_loss = fwd_loss + bwd_loss
-
-# # Build example table rows for wandb (up to 10 source sentences)
-# num_examples = min(10, batch_size)
-# g = config.grpo_group_size
-# example_rows = [
-#     [english_sentences[i], j, fwd_texts[i][j], k, all_back_texts[i][j][k]]
-#     for i in range(num_examples)
-#     for j in range(g)
-#     for k in range(g)
-# ]
-
-# normalized_fwd_rewards = forward_rewards / config.grpo_group_size
-# metrics = {
-#     "loss": total_loss,
-#     "fwd_loss": fwd_loss,
-#     "bwd_loss": bwd_loss,
-#     "mean_fwd_reward": normalized_fwd_rewards.mean().item(),
-#     "mean_bwd_reward": backward_rewards.mean().item(),
-#     "mean_total_reward": (
-#         normalized_fwd_rewards.mean() + backward_rewards.mean()
-#     ).item(),
-#     "fwd_kl_div": fwd_kl_div,
-#     "bwd_kl_div": bwd_kl_div,
-#     "mean_fwd_std": fwd_std.mean().item(),
-#     "mean_bwd_std": bwd_std.mean().item(),
-# }
-
-# return {"loss": total_loss, "metrics": metrics, "example_rows": example_rows}
-
-
 def generate_translations_and_rewards(
     model: Any,
     tokenizer: Any,
@@ -87,7 +28,7 @@ def generate_translations_and_rewards(
         - fwd_prompts (list[str]): (bs,) list of forward prompts
         - fwd_texts (list[list[str]]): (bs, gs) list of predicted forward translations
         - bwd_texts (list[list[list[str]]]): (bs, gs, 1 or gs) list of 1 or multiple backtranslations
-        - rewards (Tensor): (bs, gs) unnormalized float rewards
+        - rewards (Tensor): (2, bs, gs) normalized float rewards
     """
     batch_size = len(english_sentences)
 
@@ -152,7 +93,6 @@ def generate_translations_and_rewards(
         english_sentences,
         fwd_texts,
         all_back_texts,
-        metric=config.reward_metric,
     )
     forward_rewards = forward_rewards.to(model.device)
     return fwd_prompts, fwd_texts, all_back_texts, forward_rewards
@@ -224,13 +164,21 @@ def compute_grpo_loss(
     old_logprobs: torch.Tensor,
     ref_logprobs: torch.Tensor,
     mask: torch.Tensor,
-    rewards: torch.Tensor,
+    rewards: torch.Tensor,  # (2,bs,gs)
     config: ExperimentConfig,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     advantages = (
         (rewards - rewards.mean(dim=-1, keepdim=True))
         / (rewards.std(dim=-1, keepdim=True).clamp(min=1e-8))
-    ).reshape(-1)  # (bs*gs,)
+    ).reshape(2, -1)  # (2,bs*gs)
+    if config.reward_metric == "bleu":
+        advantages = advantages[0]
+    elif config.reward_metric == "chrf":
+        advantages = advantages[1]
+    elif config.reward_metric == "both":
+        # TODO: Right now just an unweighted mean, maybe want weighting factor
+        advantages = advantages.mean(dim=0)
+
     policy_ratio = torch.exp(policy_logprobs - old_logprobs)
     pg_loss_term = policy_ratio * advantages.unsqueeze(1)
     clipped_pg = torch.clamp(

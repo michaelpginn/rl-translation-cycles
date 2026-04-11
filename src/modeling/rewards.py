@@ -39,7 +39,6 @@ def compute_cycle_rewards(
     original_english: list[str],
     forward_translations: list[list[str]],
     back_translations: list[list[list[str]]],
-    metric: str = "chrf",
     log=True,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute cycle-consistency rewards for GRPO.
@@ -50,7 +49,7 @@ def compute_cycle_rewards(
         (target -> eng)
 
     Back-translation reward: metric(back_translation, original_english)
-    Forward reward for candidate j: unnormalized sum of back-translation rewards
+    Forward reward for candidate j: mean of back-translation rewards
         for all back-translations of candidate j
     Total reward = alpha * forward_reward + back_reward
 
@@ -58,37 +57,41 @@ def compute_cycle_rewards(
         original_english: batch of original English sentences
         forward_translations: [batch_size, g] forward translations
         back_translations: [batch_size, g, g] back translations
-        metric: "bleu" or "chrf"
 
     Returns:
-        forward_rewards: [batch_size, g] rewards for forward step
-        backward_rewards: [batch_size, g, g] rewards for backward step
+        forward_rewards: [2, batch_size, g] rewards for forward step (first dim is bleu/chrf rewards)
+        backward_rewards: [2, batch_size, g, g] rewards for backward step
     """
     batch_size = len(original_english)
     g_fwd = len(forward_translations[0])
     g_bwd = len(back_translations[0][0])
 
-    backward_rewards = torch.zeros(batch_size, g_fwd, g_bwd)
-    forward_rewards = torch.zeros(batch_size, g_fwd)
+    backward_rewards = torch.zeros(2, batch_size, g_fwd, g_bwd)
+    forward_rewards = torch.zeros(2, batch_size, g_fwd)
 
     for i in range(batch_size):
         for j in range(g_fwd):
             back_preds = back_translations[i][j]
             refs = [original_english[i]] * g_bwd
-            scores = compute_sentence_metric(back_preds, refs, metric)
+            bleu_scores = compute_sentence_metric(back_preds, refs, "bleu")
+            chrf_scores = compute_sentence_metric(back_preds, refs, "chrf")
 
             for k in range(g_bwd):
-                backward_rewards[i, j, k] = scores[k]
+                backward_rewards[0, i, j, k] = bleu_scores[k]
+                backward_rewards[1, i, j, k] = chrf_scores[k]
 
-            # Forward reward = unnormalized sum of backward rewards
-            forward_rewards[i, j] = sum(scores)
+            # Forward reward = mean of backward rewards
+            forward_rewards[0, i, j] = sum(bleu_scores) / len(bleu_scores)
+            forward_rewards[1, i, j] = sum(chrf_scores) / len(chrf_scores)
 
     if log:
         logger.info(f"""First example:
 Original eng: {original_english[0]}
 Forw pred: {forward_translations[0]}
-Forw rwd:  {forward_rewards[0].tolist()}
+Forw rwd (bleu):  {forward_rewards[0, 0].tolist()}
+Forw rwd (chrf):  {forward_rewards[1, 0].tolist()}
 Back pred: {pformat(back_translations[0])}
-Back rwd: {backward_rewards[0]}""")
+Back rwd (bleu): {backward_rewards[0, 0]}
+Back rwd (chrf): {backward_rewards[1, 0]}""")
 
     return forward_rewards, backward_rewards

@@ -27,7 +27,7 @@ class ExperimentConfig:
     grpo_epsilon: float = (
         0.2  # Not used for now, used if doing multiple updates/rollout
     )
-    reward_metric: Literal["bleu", "chrf"] = "chrf"
+    reward_metric: Literal["bleu", "chrf", "both"] = "both"
     greedy_backward: bool = False
 
     # Training
