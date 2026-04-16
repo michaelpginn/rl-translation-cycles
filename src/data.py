@@ -138,7 +138,7 @@ class NLLBTrainDataset(Dataset):  # type: ignore[type-arg]
         for example in ds:
             if len(sentences) >= config.train_num_sentences:
                 break
-            sentences.extend(example["sentence_eng_Latn"])  # type:ignore
+            sentences.append(example["sentence_eng_Latn"])  # type:ignore
         self.sentences = sentences[: config.train_num_sentences]
         logger.info(f"Loaded {len(self.sentences)} English sentences for training")
         logger.info(f"First twenty sentences: {pformat(self.sentences[:20])}")

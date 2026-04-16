@@ -13,7 +13,6 @@
 #SBATCH --mail-user=michael.ginn@colorado.edu
 #SBATCH --mail-type=ALL
 
-module load uv
 cd "$SLURM_SUBMIT_DIR"
 uv sync
 uv pip install flash-attn setuptools --no-build-isolation
