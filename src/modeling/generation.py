@@ -21,6 +21,7 @@ def sample_completions(
     max_new_tokens: int,
     temperature: float,
     top_p: float,
+    top_k: int,
 ) -> tuple[list[list[str]], torch.Tensor]:
     """Sample multiple completions for each prompt.
 

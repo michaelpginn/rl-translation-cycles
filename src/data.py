@@ -72,26 +72,31 @@ class FineWebTrainDataset(Dataset):  # type: ignore[type-arg]
         return self.sentences[idx]
 
 
-class FloresEvalDataset(Dataset):  # type: ignore[type-arg]
+class EvalDataset(Dataset):
+    pass
+
+
+class FloresEvalDataset(EvalDataset):  # type: ignore[type-arg]
     """FLORES-200 parallel data for evaluation.
     See https://huggingface.co/datasets/openlanguagedata/flores_plus#dataset-structure
     """
 
-    def __init__(self, split: Literal["dev", "devtest"], config: ExperimentConfig):
+    def __init__(self, split: Literal["dev", "test"], config: ExperimentConfig):
         self.target_lang = config.language
 
         logger.info(f"Loading FLORES-200 eval data: eng_Latn -> {self.target_lang}")
+        real_split = "devtest" if split == "test" else "dev"
         eng = load_dataset(
             config.eval_dataset,
             "eng_Latn",
             trust_remote_code=True,
-            split=split,
+            split=real_split,
         ).to_pandas()  # type:ignore
         tgt = load_dataset(
             config.eval_dataset,
             self.target_lang,
             trust_remote_code=True,
-            split=split,
+            split=real_split,
         ).to_pandas()  # type:ignore
         eng["text"] = eng["text"].str.replace("\xa0", " ")  # type:ignore
         tgt["text"] = tgt["text"].str.replace("\xa0", " ")  # type:ignore
@@ -107,4 +112,69 @@ class FloresEvalDataset(Dataset):  # type: ignore[type-arg]
         return {
             "eng": self.parallel_df.iloc[idx]["text_eng"],
             "tgt": self.parallel_df.iloc[idx]["text_tgt"],
+        }
+
+
+class NLLBTrainDataset(Dataset):  # type: ignore[type-arg]
+    """English sentences from NLLB_MD (to repro)."""
+
+    def __init__(
+        self,
+        config: ExperimentConfig,
+        tokenizer,
+    ):
+        logger.info(
+            f"Loading NLLB ({config.train_dataset_subset}), "
+            f"extracting {config.train_num_sentences} sentences"
+        )
+        ds = load_dataset(
+            config.train_dataset,
+            name=f"eng_Latn-{config.language}",
+            split="train",
+            streaming=True,
+        )
+        # Stream more until we reach the desired number of sentences
+        sentences: list[str] = []
+        for example in ds:
+            if len(sentences) >= config.train_num_sentences:
+                break
+            sentences.extend(example["sentence_eng_Latn"])  # type:ignore
+        self.sentences = sentences[: config.train_num_sentences]
+        logger.info(f"Loaded {len(self.sentences)} English sentences for training")
+        logger.info(f"First twenty sentences: {pformat(self.sentences[:20])}")
+
+    def __len__(self) -> int:
+        return len(self.sentences)
+
+    def __getitem__(self, idx: int) -> str:
+        return self.sentences[idx]
+
+
+class NLLBEvalDataset(EvalDataset):  # type: ignore[type-arg]
+    """Paired sentences from NLLB_MD (to repro)."""
+
+    def __init__(
+        self,
+        split: Literal["dev", "test"],
+        config: ExperimentConfig,
+    ):
+        logger.info(
+            f"Loading FineWeb ({config.train_dataset_subset}), "
+            f"extracting {config.train_num_sentences} sentences"
+        )
+        real_split = "valid" if split == "dev" else "test"
+        self.dataset: Dataset = load_dataset(  # type:ignore
+            config.eval_dataset,
+            name=f"eng_Latn-{config.language}",
+            split=real_split,
+        )
+        self.lang = config.language
+
+    def __len__(self) -> int:
+        return len(self.dataset)  # type:ignore
+
+    def __getitem__(self, idx: int) -> dict:
+        return {
+            "eng": self.dataset[idx]["sentence_eng_Latn"],
+            "tgt": self.dataset[idx][f"sentence_{self.lang}"],
         }

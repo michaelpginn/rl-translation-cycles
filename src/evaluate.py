@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 
 from src.config.config import ExperimentConfig
-from src.data import FloresEvalDataset
+from src.data import EvalDataset
 from src.distributed import DistributedConfig
 from src.modeling.generation import greedy_decode
 from src.modeling.prompts import make_backward_prompt, make_forward_prompt
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 def generate(
     model,
     tokenizer,
-    dataset: FloresEvalDataset,
+    dataset: EvalDataset,
     config: ExperimentConfig,
     dist_config: DistributedConfig,
 ):
@@ -100,7 +100,7 @@ def generate(
 def evaluate(
     model: Any,
     tokenizer: Any,
-    dataset: FloresEvalDataset,
+    dataset: EvalDataset,
     config: ExperimentConfig,
     dist_config: DistributedConfig,
 ) -> dict:

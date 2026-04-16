@@ -24,6 +24,7 @@ class ExperimentConfig:
     grpo_beta: float = 0.1
     grpo_temperature: float = 0.5
     grpo_top_p: float = 0.9
+    grpo_top_k: int = 100
     grpo_epsilon: float = (
         0.2  # Not used for now, used if doing multiple updates/rollout
     )
@@ -40,6 +41,7 @@ class ExperimentConfig:
     optimizer: str = "adamw"
     warmup_steps: int = 100
     eval_every_n_steps: int = 50
+    reference_update_steps: int = -1  # If >0, how often to update the reference policy
 
     # Logging
     wandb_project: str = "rl-translation-cycles-2"

@@ -10,7 +10,7 @@ from typing import Any
 import torch
 import wandb
 from src.config import ExperimentConfig, config_to_dataclass
-from src.data import FloresEvalDataset
+from src.data import FloresEvalDataset, NLLBEvalDataset
 from src.distributed import cleanup_distributed, setup_distributed
 from src.evaluate import evaluate
 from src.evaluate_correlation import evaluate_correlation
@@ -87,18 +87,20 @@ def main() -> None:
                 model, device_ids=[dist_config.local_rank]
             )
 
-        dev_dataset = FloresEvalDataset("dev", config)
-        devtest_dataset = FloresEvalDataset("devtest", config)
+        if config.eval_dataset == "breakend/nllb-multi-domain":
+            dev_dataset = NLLBEvalDataset("dev", config)
+            test_dataset = NLLBEvalDataset("test", config)
+        else:
+            dev_dataset = FloresEvalDataset("dev", config)
+            test_dataset = FloresEvalDataset("test", config)
 
         if config.mode == "train":
-            train(model, tokenizer, dev_dataset, devtest_dataset, config, dist_config)
+            train(model, tokenizer, dev_dataset, test_dataset, config, dist_config)
         elif config.mode == "eval":
             dev_metrics = evaluate(model, tokenizer, dev_dataset, config, dist_config)
-            devtest_metrics = evaluate(
-                model, tokenizer, devtest_dataset, config, dist_config
-            )
+            test_metrics = evaluate(model, tokenizer, test_dataset, config, dist_config)
             if dist_config.is_main:
-                wandb.log({"dev": dev_metrics, "devtest": devtest_metrics})
+                wandb.log({"dev": dev_metrics, "test": test_metrics})
         elif config.mode == "correlation":
             # Correlational analysis between cycle consistency + main metric
             evaluate_correlation(model, tokenizer, dev_dataset, config, dist_config)

@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from src.config.config import ExperimentConfig
-from src.data import FloresEvalDataset
+from src.data import EvalDataset
 from src.distributed import DistributedConfig
 from src.modeling.generation import greedy_decode, sample_completions
 from src.modeling.prompts import make_backward_prompt, make_forward_prompt
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 def evaluate_correlation(
     model: Any,
     tokenizer: Any,
-    dataset: FloresEvalDataset,
+    dataset: EvalDataset,
     config: ExperimentConfig,
     dist_config: DistributedConfig,
 ):
@@ -52,6 +52,7 @@ def evaluate_correlation(
             max_new_tokens=config.max_tokens,
             temperature=config.grpo_temperature,
             top_p=config.grpo_top_p,
+            top_k=config.grpo_top_k,
         )
         bwd_prompts = [
             make_backward_prompt(s, config.language)

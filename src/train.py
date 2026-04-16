@@ -4,17 +4,16 @@ from __future__ import annotations
 
 import copy
 import logging
-import math
 import os
 from collections import defaultdict
 
 import torch
+import wandb
 from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 
-import wandb
 from src.config.config import ExperimentConfig
-from src.data import FineWebTrainDataset, FloresEvalDataset
+from src.data import EvalDataset, FineWebTrainDataset, NLLBTrainDataset
 from src.distributed import DistributedConfig
 from src.evaluate import evaluate
 from src.modeling.grpo import (
@@ -27,11 +26,21 @@ from src.modeling.mem_profile import log_mem
 logger = logging.getLogger(__name__)
 
 
+def copy_frozen(model):
+    log_mem("before_ref_model_copy")
+    ref_model = copy.deepcopy(model)
+    ref_model.eval()
+    for param in ref_model.parameters():
+        param.requires_grad = False
+    log_mem("after_ref_model_copy")
+    return ref_model
+
+
 def train(
     model,
     tokenizer,
-    dev_dataset: FloresEvalDataset,
-    devtest_dataset: FloresEvalDataset,
+    dev_dataset: EvalDataset,
+    test_dataset: EvalDataset,
     config: ExperimentConfig,
     dist_config: DistributedConfig,
 ) -> None:
@@ -43,12 +52,7 @@ def train(
         world_size: number of distributed processes
     """
     # Reference model (frozen copy)
-    log_mem("before_ref_model_copy")
-    ref_model = copy.deepcopy(model)
-    ref_model.eval()
-    for param in ref_model.parameters():
-        param.requires_grad = False
-    log_mem("after_ref_model_copy")
+    ref_model = copy_frozen(model)
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -65,17 +69,18 @@ def train(
         // (config.batch_size * dist_config.world_size * config.grad_acc_steps)
     )
 
+    # Linear warmup
     def lr_lambda(step: int) -> float:
         if step < config.warmup_steps:
             return step / max(config.warmup_steps, 1)
-        progress = (step - config.warmup_steps) / max(
-            total_optimizer_steps - config.warmup_steps, 1
-        )
-        return max(0.1, 0.5 * (1 + math.cos(progress * math.pi)))
+        return 1
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
 
-    train_dataset = FineWebTrainDataset(config, tokenizer)
+    if config.train_dataset == "breakend/nllb-multi-domain":
+        train_dataset = NLLBTrainDataset(config, tokenizer)
+    else:
+        train_dataset = FineWebTrainDataset(config, tokenizer)
     sampler: DistributedSampler[FineWebTrainDataset] | None = None
     if dist_config.distributed:
         sampler = DistributedSampler(
@@ -91,9 +96,9 @@ def train(
         logger.info("Running initial evaluation...")
     model.eval()
     dev_metrics = evaluate(model, tokenizer, dev_dataset, config, dist_config)
-    devtest_metrics = evaluate(model, tokenizer, devtest_dataset, config, dist_config)
+    test_metrics = evaluate(model, tokenizer, test_dataset, config, dist_config)
     if dist_config.is_main:
-        wandb.log({"dev": dev_metrics, "devtest": devtest_metrics}, step=0)
+        wandb.log({"dev": dev_metrics, "test": test_metrics}, step=0)
 
     # Training loop
     num_optimizer_steps = (
@@ -248,12 +253,12 @@ def train(
                             dev_metrics = evaluate(
                                 model, tokenizer, dev_dataset, config, dist_config
                             )
-                            devtest_metrics = evaluate(
-                                model, tokenizer, devtest_dataset, config, dist_config
+                            test_metrics = evaluate(
+                                model, tokenizer, test_dataset, config, dist_config
                             )
                             if dist_config.is_main:
                                 wandb.log(
-                                    {"dev": dev_metrics, "devtest": devtest_metrics},
+                                    {"dev": dev_metrics, "test": test_metrics},
                                     step=num_optimizer_steps,
                                 )
                             model.train()
@@ -266,6 +271,15 @@ def train(
                     old_logprobs = []
                     logprobs_mask = []
                     ref_logprobs = []
+
+                    if (
+                        config.reference_update_steps > 0
+                        and ((num_batch_rollouts + 1) / config.grad_acc_steps)
+                        % config.reference_update_steps
+                        == 0
+                    ):
+                        logger.info("Updating reference model")
+                        ref_model = copy_frozen(model)
                 num_batch_rollouts += 1
 
                 if dist_config.is_main:
@@ -277,15 +291,13 @@ def train(
 
             logger.info("Running end-of-epoch evaluation...")
             dev_metrics = evaluate(model, tokenizer, dev_dataset, config, dist_config)
-            devtest_metrics = evaluate(
-                model, tokenizer, devtest_dataset, config, dist_config
-            )
+            test_metrics = evaluate(model, tokenizer, test_dataset, config, dist_config)
             if dist_config.is_main:
                 wandb.log(
                     {
                         "epoch": epoch + 1,
                         "dev": dev_metrics,
-                        "devtest": devtest_metrics,
+                        "test": test_metrics,
                     },
                     step=num_optimizer_steps,
                 )

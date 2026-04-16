@@ -45,6 +45,7 @@ def generate_translations_and_rewards(
             max_new_tokens=config.max_tokens,
             temperature=config.grpo_temperature,
             top_p=config.grpo_top_p,
+            top_k=config.grpo_top_k,
         )
     log_mem("after_fwd_generation")
 
@@ -66,6 +67,7 @@ def generate_translations_and_rewards(
                         max_new_tokens=config.max_tokens,
                         temperature=config.grpo_temperature,
                         top_p=config.grpo_top_p,
+                        top_k=config.grpo_top_k,
                     )
                 group_back.append(bwd_texts_ij[0])  # g back translations
                 all_bwd_prompts.extend([bwd_prompt] * config.grpo_group_size)
@@ -193,5 +195,7 @@ def compute_grpo_loss(
         token_level_loss = -(clipped_pg - config.grpo_beta * kl_divergence)
     else:
         token_level_loss = -clipped_pg
-    loss = (token_level_loss * mask).sum() / mask.sum()
+    # DrGRPO style loss average (so sequences have equal weight regardless of length)
+    loss = (token_level_loss * mask).sum(dim=-1) / mask.sum(dim=-1)
+    loss = loss.mean()
     return loss, kl_divergence
