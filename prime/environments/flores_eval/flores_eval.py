@@ -20,7 +20,6 @@ import pandas as pd
 import sacrebleu
 import verifiers as vf
 from datasets import Dataset, load_dataset
-from huggingface_hub import login
 
 # ---------------------------------------------------------------------------
 # Language-name lookup (mirrors src/data.py LANG_NAMES, replicated here so
@@ -116,18 +115,20 @@ LANG_NAMES: dict[str, str] = {
 }
 
 
-def _load_flores(language: str, split: str):
+def _load_flores(language: str, split: str, token: str):
     eng = load_dataset(
         "openlanguagedata/flores_plus",
         "eng_Latn",
         # trust_remote_code=True,
         split=split,
+        token=token,
     ).to_pandas()  # type:ignore
     tgt = load_dataset(
         "openlanguagedata/flores_plus",
         language,
         # trust_remote_code=True,
         split=split,
+        token=token,
     ).to_pandas()  # type:ignore
     eng["text"] = eng["text"].str.replace("\xa0", " ")  # type:ignore
     tgt["text"] = tgt["text"].str.replace("\xa0", " ")  # type:ignore
@@ -185,7 +186,7 @@ def load_environment(
         seed: Random seed (reserved for future shuffling).
     """
     vf.ensure_keys(["HF_TOKEN_FLORES"])
-    login(token=os.environ["HF_TOKEN_FLORES"])
+    # login(token=os.environ["HF_TOKEN_FLORES"])
 
     if target_lang not in LANG_NAMES:
         raise ValueError(
@@ -193,16 +194,16 @@ def load_environment(
             f"Supported codes: {sorted(LANG_NAMES)}"
         )
     lang_name = LANG_NAMES[target_lang]
-    sentences = _load_flores(target_lang, split)
+    sentences = _load_flores(target_lang, split, token=os.environ["HF_TOKEN_FLORES"])
 
     rows = []
     for _, sentence in sentences.iterrows():
         if direction == "forward":
-            prompt = _make_forward_prompt(sentence["txt_eng"], lang_name)  # type:ignore
-            answer = sentence["txt_tgt"]
+            prompt = _make_forward_prompt(sentence["text_eng"], lang_name)  # type:ignore
+            answer = sentence["text_tgt"]
         else:
-            prompt = _make_backward_prompt(sentence["txt_tgt"], lang_name)  # type:ignore
-            answer = sentence["txt_eng"]
+            prompt = _make_backward_prompt(sentence["text_tgt"], lang_name)  # type:ignore
+            answer = sentence["text_eng"]
         rows.append(
             {
                 "prompt": [{"role": "user", "content": prompt}],
