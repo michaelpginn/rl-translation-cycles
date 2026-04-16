@@ -2,11 +2,11 @@
 
 import csv
 import logging
-import re
 from pathlib import Path
 from pprint import pformat
 from typing import Literal
 
+import nltk
 import pandas as pd
 from datasets import load_dataset
 from torch.utils.data import Dataset
@@ -22,26 +22,15 @@ with open(_LANGS_CSV) as _f:
     }
 
 
-sentence_regex = r"(?<=[.?!\"])\s+([A-Z](?:[A-Za-z0-9,\s\:\"\'\/\-\\]+)[.?!]+\"?)"
-words_with_periods = {"mr.", "dr.", "mrs.", "etc."}  # TODO: expand
-
-
 def _extract_sentences(text: str, max_len: int, tokenizer) -> list[str]:
     """Split text into sentences and filter by length."""
-    # Simple sentence splitting on period/question/exclamation followed by space
-    sentences = re.findall(sentence_regex, text.strip(), flags=re.DOTALL | re.MULTILINE)
-    # sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+    sentences = nltk.sent_tokenize(text)
     result = []
     for s in sentences:
         s = s.strip()
         words: list[str] = s.split()
         num_tokens = len(tokenizer(s)["input_ids"])
-        if (
-            len(words) < 5
-            or num_tokens >= max_len
-            or s[-1] not in ".!?"
-            or words[-1].lower() in words_with_periods
-        ):
+        if len(words) < 5 or num_tokens >= max_len:
             continue
         result.append(s)
     return result

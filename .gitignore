@@ -28,3 +28,5 @@ build.txt
 data/*.json
 
 *.pickle
+.prime
+secrets.env

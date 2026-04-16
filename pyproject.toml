@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "accelerate>=1.12.0",
     "datasets>=2.14,<4",
+    "nltk>=3.9.4",
     "matplotlib>=3.10.8",
     "pandas>=3.0.0",
     "peft>=0.18.1",
@@ -16,6 +17,7 @@ dependencies = [
     "torch>=2.10.0",
     "tqdm>=4.67.3",
     "transformers>=5.1.0",
+    "verifiers>=0.1.11",
     "wandb>=0.24.2",
 ]
 
