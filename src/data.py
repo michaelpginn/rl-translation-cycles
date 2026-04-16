@@ -11,7 +11,7 @@ import pandas as pd
 from datasets import load_dataset
 from torch.utils.data import Dataset
 
-from src.config.experiment_config import ExperimentConfig
+from src.config.config import ExperimentConfig
 
 logger = logging.getLogger(__name__)
 

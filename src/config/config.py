@@ -5,7 +5,7 @@ from typing import Literal
 
 @dataclass
 class ExperimentConfig:
-    mode: Literal["train", "eval"]
+    mode: Literal["train", "eval", "correlation"]
     language: str
     pretrained_model: str = "Qwen/Qwen3-0.6B"
 
@@ -27,21 +27,22 @@ class ExperimentConfig:
     grpo_epsilon: float = (
         0.2  # Not used for now, used if doing multiple updates/rollout
     )
-    reward_metric: Literal["bleu", "chrf"] = "chrf"
-    alpha: float = 0.5  # weight for backward translation reward
+    reward_metric: Literal["bleu", "chrf", "both"] = "both"
+    greedy_backward: bool = False
 
     # Training
     max_epochs: int = 3
     learning_rate: float = 1e-5
     batch_size: int = 4
-    gradient_accumulation_steps: int = 4
+    grad_acc_steps: int = 4
+    inner_update_steps: int = 2  # Number of "inner updates" per sample of rollouts
     grad_norm: float = 1.0
     optimizer: str = "adamw"
     warmup_steps: int = 100
     eval_every_n_steps: int = 50
 
     # Logging
-    wandb_project: str = "rl-translation-cycles"
+    wandb_project: str = "rl-translation-cycles-2"
     wandb_run_name: str | None = None
 
     # Checkpointing

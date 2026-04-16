@@ -12,9 +12,12 @@
 #SBATCH --mail-user=michael.ginn@colorado.edu
 #SBATCH --mail-type=ALL
 
+# module load cuda/12.1.1
+# module load gcc/11.2.0
+# module load miniforge
+# mamba activate flash_env
 module load uv
 uv sync
-uv pip install flash-attn setuptools --no-build-isolation
 
 export PYTORCH_ALLOC_CON=expandable_segments:True
 export CUDA_LAUNCH_BLOCKING=1
