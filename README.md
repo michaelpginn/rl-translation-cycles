@@ -6,6 +6,19 @@ TLDR: Use monolingual data to optimize round-trip translation via GRPO. Sort of 
 uv run run.py <experiments/qwen3_0.6b_grpo/eval.cfg> # whatever config you want
 ```
 
+or with Prime RL
+
+```bash
+cd prime
+
+# Run RL training job
+prime rl run configs/translation-cycles.toml
+
+# Update an env
+cd environments/flores_eval/
+prime env push
+```
+
 # Method
 
 1. Given a sentence in English, generate multiple translations in the target language. For each translation, generate multiple English translations.
