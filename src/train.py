@@ -92,13 +92,14 @@ def train(
         sampler=sampler,
         shuffle=(sampler is None),
     )
-    if dist_config.is_main:
-        logger.info("Running initial evaluation...")
-    model.eval()
-    dev_metrics = evaluate(model, tokenizer, dev_dataset, config, dist_config)
-    test_metrics = evaluate(model, tokenizer, test_dataset, config, dist_config)
-    if dist_config.is_main:
-        wandb.log({"dev": dev_metrics, "test": test_metrics}, step=0)
+    if not config.skip_initial_eval:
+        if dist_config.is_main:
+            logger.info("Running initial evaluation...")
+        model.eval()
+        dev_metrics = evaluate(model, tokenizer, dev_dataset, config, dist_config)
+        test_metrics = evaluate(model, tokenizer, test_dataset, config, dist_config)
+        if dist_config.is_main:
+            wandb.log({"dev": dev_metrics, "test": test_metrics}, step=0)
 
     # Training loop
     num_optimizer_steps = (

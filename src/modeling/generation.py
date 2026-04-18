@@ -7,6 +7,7 @@ from typing import Any
 
 import torch
 
+from src.config.config import ExperimentConfig
 from src.modeling.mem_profile import log_mem
 
 logger = logging.getLogger(__name__)
@@ -17,11 +18,9 @@ def sample_completions(
     model: Any,
     tokenizer: Any,
     prompts: list[str],
+    target_lang: str,
     num_samples: int,
-    max_new_tokens: int,
-    temperature: float,
-    top_p: float,
-    top_k: int,
+    config: ExperimentConfig,
 ) -> tuple[list[list[str]], torch.Tensor]:
     """Sample multiple completions for each prompt.
 
@@ -33,7 +32,6 @@ def sample_completions(
     expanded_prompts = []
     for p in prompts:
         expanded_prompts.extend([p] * num_samples)
-
     inputs = tokenizer(
         expanded_prompts,
         return_tensors="pt",
@@ -46,14 +44,20 @@ def sample_completions(
     log_mem("sample_completions_before_generate")
     outputs = model.generate(
         **inputs,
-        max_new_tokens=max_new_tokens,
+        max_new_tokens=config.max_tokens,
         do_sample=True,
-        temperature=temperature,
-        top_p=top_p,
+        temperature=config.grpo_temperature,
+        top_p=config.grpo_top_p,
+        top_k=config.grpo_top_k,
         return_dict_in_generate=True,
-        stop_strings=["\n"],
         tokenizer=tokenizer,
         pad_token_id=tokenizer.eos_token_id,
+        **({"stop_strings": [config.stop_string]} if config.stop_string else {}),
+        **(
+            {"forced_bos_token_id": tokenizer.convert_tokens_to_ids(target_lang)}
+            if config.is_nllb
+            else {}
+        ),
     )
     log_mem("sample_completions_after_generate")
 
@@ -61,10 +65,11 @@ def sample_completions(
 
     # Decode texts
     decoded = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-    texts = []
+    texts: list[list[str]] = []
     for i in range(len(prompts)):
         batch_texts = decoded[i * num_samples : (i + 1) * num_samples]
-        texts.append([t.strip() for t in batch_texts])
+        batch_texts = [t.strip() for t in batch_texts]
+        texts.append(batch_texts)
 
     return texts, generated_ids
 
@@ -74,7 +79,8 @@ def greedy_decode(
     model: Any,
     tokenizer: Any,
     prompts: list[str],
-    max_new_tokens: int,
+    target_lang: str,
+    config: ExperimentConfig,
 ) -> list[str]:
     """Greedy decoding for evaluation."""
     inputs = tokenizer(
@@ -86,12 +92,18 @@ def greedy_decode(
     prompt_len = inputs.input_ids.shape[1]
     outputs = model.generate(
         **inputs,
-        max_new_tokens=max_new_tokens,
+        max_new_tokens=config.max_tokens,
         do_sample=False,
-        stop_strings=["\n"],
         tokenizer=tokenizer,
         pad_token_id=tokenizer.eos_token_id,
+        **({"stop_strings": [config.stop_string]} if config.stop_string else {}),
+        **(
+            {"forced_bos_token_id": tokenizer.convert_tokens_to_ids(target_lang)}
+            if config.is_nllb
+            else {}
+        ),
     )
     generated_ids = outputs[:, prompt_len:]
     decoded = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
-    return [t.strip() for t in decoded]
+    decoded = [t.strip() for t in decoded]
+    return decoded

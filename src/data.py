@@ -124,14 +124,14 @@ class NLLBTrainDataset(Dataset):  # type: ignore[type-arg]
         tokenizer,
     ):
         logger.info(
-            f"Loading NLLB ({config.train_dataset_subset}), "
-            f"extracting {config.train_num_sentences} sentences"
+            f"Loading NLLB for training ({config.train_num_sentences} sentences)"
         )
         ds = load_dataset(
             config.train_dataset,
             name=f"eng_Latn-{config.language}",
             split="train",
             streaming=True,
+            trust_remote_code=True,
         )
         # Stream more until we reach the desired number of sentences
         sentences: list[str] = []
@@ -158,15 +158,13 @@ class NLLBEvalDataset(EvalDataset):  # type: ignore[type-arg]
         split: Literal["dev", "test"],
         config: ExperimentConfig,
     ):
-        logger.info(
-            f"Loading FineWeb ({config.train_dataset_subset}), "
-            f"extracting {config.train_num_sentences} sentences"
-        )
+        logger.info("Loading NLLB for eval")
         real_split = "valid" if split == "dev" else "test"
         self.dataset: Dataset = load_dataset(  # type:ignore
             config.eval_dataset,
             name=f"eng_Latn-{config.language}",
             split=real_split,
+            trust_remote_code=True,
         )
         self.lang = config.language
 

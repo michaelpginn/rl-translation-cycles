@@ -43,24 +43,24 @@ def evaluate_correlation(
         tgt_sentences = batch["tgt"]
         bs = len(eng_sentences)
 
-        fwd_prompts = [make_forward_prompt(s, config.language) for s in eng_sentences]
+        fwd_prompts = [make_forward_prompt(s, config) for s in eng_sentences]
         fwd_preds, _ = sample_completions(
             model,
             tokenizer,
             fwd_prompts,
+            target_lang=config.language,
             num_samples=gs,
-            max_new_tokens=config.max_tokens,
-            temperature=config.grpo_temperature,
-            top_p=config.grpo_top_p,
-            top_k=config.grpo_top_k,
+            config=config,
         )
         bwd_prompts = [
-            make_backward_prompt(s, config.language)
-            for group in fwd_preds
-            for s in group
+            make_backward_prompt(s, config) for group in fwd_preds for s in group
         ]
         bwd_preds = greedy_decode(
-            model, tokenizer, bwd_prompts, max_new_tokens=config.max_tokens
+            model,
+            tokenizer,
+            bwd_prompts,
+            target_lang="eng_Latn",
+            config=config,
         )
         bwd_preds = [bwd_preds[i * gs : (i + 1) * gs] for i in range(bs)]
 

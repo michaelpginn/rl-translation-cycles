@@ -8,8 +8,10 @@ class ExperimentConfig:
     mode: Literal["train", "eval", "correlation"]
     language: str
     pretrained_model: str = "Qwen/Qwen3-0.6B"
+    model_type: Literal["decoder", "seq2seq"] = "decoder"
 
     max_tokens: int = 256
+    stop_string: str | None = "\n"
 
     train_dataset: str = "HuggingFaceFW/fineweb"
     train_dataset_subset: str = "sample-10BT"
@@ -55,3 +57,8 @@ class ExperimentConfig:
     slurm_job_id: str | None = field(
         default_factory=lambda: os.environ.get("SLURM_JOB_ID")
     )
+    skip_initial_eval: bool = False
+
+    @property
+    def is_nllb(self):
+        return "nllb" in self.pretrained_model

@@ -1,6 +1,6 @@
 model = "meta-llama/Llama-3.2-3B-Instruct"
 env_file = ["secrets.env"]
-max_steps = 500
+max_steps = 2000
 
 batch_size = 512
 rollouts_per_example = 16
@@ -12,13 +12,13 @@ temperature = 0.7
 
 [[env]]
 id = "michaelginn/translation-cycles"
-args = { target_lang = "deu_Latn", num_sentences = 10000 }
+args = { target_lang = "deu_Latn", num_sentences = 100000 }
 
 [eval]
 interval = 100
 num_examples = -1
 rollouts_per_example = 1
-eval_base_model = true
+eval_base_model = false
 
 [[eval.env]]
 name = "flores-forward"

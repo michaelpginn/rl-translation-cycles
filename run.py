@@ -15,7 +15,7 @@ from src.distributed import cleanup_distributed, setup_distributed
 from src.evaluate import evaluate
 from src.evaluate_correlation import evaluate_correlation
 from src.train import train
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer
 
 
 def main() -> None:
@@ -62,7 +62,13 @@ def main() -> None:
 
     try:
         tokenizer = AutoTokenizer.from_pretrained(
-            config.pretrained_model, padding_side="left"
+            config.pretrained_model,
+            padding_side="left" if config.model_type == "decoder" else "right",
+            **(
+                {"src_lang": "eng_Latn", "tgt_lang": config.language}
+                if config.is_nllb
+                else {}
+            ),
         )
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
@@ -74,13 +80,23 @@ def main() -> None:
         except ImportError:
             attn_impl = "eager"
             logger.info("Falling back to eager attention")
-        model: Any = AutoModelForCausalLM.from_pretrained(
-            config.pretrained_model,
-            dtype=torch.bfloat16,
-            attn_implementation=attn_impl,
-        )
+        if config.model_type == "decoder":
+            model: Any = AutoModelForCausalLM.from_pretrained(
+                config.pretrained_model,
+                dtype=torch.bfloat16,
+                attn_implementation=attn_impl,
+            )
+        elif config.model_type == "seq2seq":
+            model: Any = AutoModelForSeq2SeqLM.from_pretrained(
+                config.pretrained_model,
+                dtype=torch.bfloat16,
+                attn_implementation=attn_impl,
+            )
+        else:
+            raise NotImplementedError()
         model = model.to(dist_config.device)
         model.gradient_checkpointing_enable()
+        model.generation_config.max_length = None
         if dist_config.distributed:
             logger.info("Wrapping model in DDP")
             model = torch.nn.parallel.DistributedDataParallel(

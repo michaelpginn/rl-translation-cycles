@@ -59,17 +59,31 @@ def generate(
         tgt_sentences = batch["tgt"]
 
         # Forward: eng -> target
-        fwd_prompts = [make_forward_prompt(s, config.language) for s in eng_sentences]
+        if config.is_nllb:
+            tokenizer.src_lang = "eng_Latn"
+            tokenizer.tgt_lang = config.language
+        fwd_prompts = [make_forward_prompt(s, config) for s in eng_sentences]
         fwd_preds = greedy_decode(
-            model, tokenizer, fwd_prompts, max_new_tokens=config.max_tokens
+            model,
+            tokenizer,
+            fwd_prompts,
+            target_lang=config.language,
+            config=config,
         )
         fwd_predictions.extend(fwd_preds)
         fwd_references.extend(tgt_sentences)
 
         # Backward: target -> eng
-        bwd_prompts = [make_backward_prompt(s, config.language) for s in tgt_sentences]
+        if config.is_nllb:
+            tokenizer.src_lang = config.language
+            tokenizer.tgt_lang = "eng_Latn"
+        bwd_prompts = [make_backward_prompt(s, config) for s in tgt_sentences]
         bwd_preds = greedy_decode(
-            model, tokenizer, bwd_prompts, max_new_tokens=config.max_tokens
+            model,
+            tokenizer,
+            bwd_prompts,
+            target_lang="eng_Latn",
+            config=config,
         )
         bwd_predictions.extend(bwd_preds)
         bwd_references.extend(eng_sentences)
