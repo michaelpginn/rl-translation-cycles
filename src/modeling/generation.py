@@ -61,7 +61,11 @@ def sample_completions(
     )
     log_mem("sample_completions_after_generate")
 
-    generated_ids = outputs.sequences[:, prompt_len:]
+    generated_ids = (
+        outputs.sequences[:, prompt_len:]
+        if config.model_type == "decoder"
+        else outputs.sequences
+    )
 
     # Decode texts
     decoded = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
@@ -81,6 +85,7 @@ def greedy_decode(
     prompts: list[str],
     target_lang: str,
     config: ExperimentConfig,
+    override_max_tokens: int | None = None,
 ) -> list[str]:
     """Greedy decoding for evaluation."""
     inputs = tokenizer(
@@ -92,7 +97,9 @@ def greedy_decode(
     prompt_len = inputs.input_ids.shape[1]
     outputs = model.generate(
         **inputs,
-        max_new_tokens=config.max_tokens,
+        max_new_tokens=config.max_tokens
+        if override_max_tokens is None
+        else override_max_tokens,
         do_sample=False,
         tokenizer=tokenizer,
         pad_token_id=tokenizer.eos_token_id,
@@ -103,7 +110,9 @@ def greedy_decode(
             else {}
         ),
     )
-    generated_ids = outputs[:, prompt_len:]
+    generated_ids = (
+        outputs[:, prompt_len:] if config.model_type == "decoder" else outputs
+    )
     decoded = tokenizer.batch_decode(generated_ids, skip_special_tokens=True)
     decoded = [t.strip() for t in decoded]
     return decoded

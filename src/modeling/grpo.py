@@ -87,6 +87,7 @@ def generate_translations_and_rewards(
                 prompts=bwd_prompts,
                 target_lang="eng_Latn",
                 config=config,
+                override_max_tokens=config.max_tokens * 2,
             )
             all_bwd_prompts.extend(bwd_prompts)
             all_bwd_completions.extend(bwd_texts_i)
