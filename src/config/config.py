@@ -31,7 +31,8 @@ class ExperimentConfig:
         0.2  # Not used for now, used if doing multiple updates/rollout
     )
     reward_metric: Literal["bleu", "chrf", "both"] = "both"
-    greedy_backward: bool = False
+    grpo_num_backward: int = 1  # Number of backward translations (sampled)
+    grpo_greedy_backward: bool = False
 
     # Training
     max_epochs: int = 3

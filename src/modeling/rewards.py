@@ -29,7 +29,7 @@ def compute_sentence_metric(
         if metric == "bleu":
             scores.append(sacrebleu.sentence_bleu(pred, [ref]).score)
         elif metric == "chrf":
-            scores.append(sacrebleu.sentence_chrf(pred, [ref]).score)
+            scores.append(sacrebleu.sentence_chrf(pred, [ref], word_order=2).score)
         else:
             raise ValueError(f"Unknown metric: {metric}")
     return scores

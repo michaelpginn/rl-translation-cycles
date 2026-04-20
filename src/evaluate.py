@@ -148,7 +148,9 @@ def evaluate(
             config.language: {
                 "forward": {
                     "bleu": sacrebleu.corpus_bleu(fwd_preds, fwd_gold).score,
-                    "chrf": sacrebleu.corpus_chrf(fwd_preds, fwd_gold).score,
+                    "chrf": sacrebleu.corpus_chrf(
+                        fwd_preds, fwd_gold, word_order=2
+                    ).score,
                 },
                 "backward": {
                     "bleu": sacrebleu.corpus_bleu(bwd_preds, bwd_gold).score,

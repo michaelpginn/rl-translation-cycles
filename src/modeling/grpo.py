@@ -58,7 +58,7 @@ def generate_translations_and_rewards(
     all_bwd_prompts = []  # flat list for loss computation
     all_bwd_completions = []
     for i in range(batch_size):
-        if not config.greedy_backward:
+        if not config.grpo_greedy_backward:
             group_back: list[list[str]] = []
             for j in range(config.grpo_group_size):
                 bwd_prompt = make_backward_prompt(fwd_texts[i][j], config)
@@ -68,11 +68,11 @@ def generate_translations_and_rewards(
                         tokenizer,
                         prompts=[bwd_prompt],
                         target_lang="eng_Latn",
-                        num_samples=config.grpo_group_size,
+                        num_samples=config.grpo_num_backward,
                         config=config,
                     )
-                group_back.append(bwd_texts_ij[0])  # g back translations
-                all_bwd_prompts.extend([bwd_prompt] * config.grpo_group_size)
+                group_back.append(bwd_texts_ij[0])
+                all_bwd_prompts.extend([bwd_prompt] * config.grpo_num_backward)
                 all_bwd_completions.extend(bwd_texts_ij[0])
                 log_mem(f"after_bwd_generation_i{i}_j{j}")
             all_back_texts.append(group_back)
