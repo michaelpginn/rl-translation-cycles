@@ -176,6 +176,8 @@ def compute_logprobs(
     logger.debug(f"Size of inputs: {encodings.input_ids.shape}")
     with torch.set_grad_enabled(with_grad):
         logits = model(**encodings).logits
+        if config.model_type == "seq2seq":
+            logits = logits[:, 1:, :]
         lse = logits[:, :-1, :].logsumexp(dim=-1)
         chosen_logits = logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
         logprobs = chosen_logits - lse
@@ -215,9 +217,9 @@ def compute_grpo_loss(
     log_ref_ratio = policy_logprobs - ref_logprobs
     kl_divergence = torch.exp(log_ref_ratio) - log_ref_ratio - 1
     if config.grpo_beta > 0:
-        token_level_loss = -(clipped_pg - config.grpo_beta * kl_divergence)
+        token_level_loss = -(pg_loss_term - config.grpo_beta * kl_divergence)
     else:
-        token_level_loss = -clipped_pg
+        token_level_loss = -pg_loss_term
     # DrGRPO style loss average (so sequences have equal weight regardless of length)
     loss = (token_level_loss * mask).sum(dim=-1) / mask.sum(dim=-1)
     loss = loss.mean()
