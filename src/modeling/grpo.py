@@ -177,8 +177,12 @@ def compute_logprobs(
     with torch.set_grad_enabled(with_grad):
         logits = model(**encodings).logits
         if config.model_type == "seq2seq":
+            # First logit is language code (NLLB)
             logits = logits[:, 1:, :]
-        lse = logits[:, :-1, :].logsumexp(dim=-1)
+        else:
+            # Last logit is for additional token
+            logits = logits[:, :-1, :]
+        lse = logits.logsumexp(dim=-1)
         chosen_logits = logits.gather(-1, labels.unsqueeze(-1)).squeeze(-1)
         logprobs = chosen_logits - lse
         del logits, lse, chosen_logits
