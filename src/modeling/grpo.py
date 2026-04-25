@@ -27,7 +27,9 @@ def generate_translations_and_rewards(
     Returns:
         - fwd_prompts (list[str]): (bs,) list of forward prompts
         - fwd_texts (list[list[str]]): (bs, gs) list of predicted forward translations
-        - bwd_texts (list[list[list[str]]]): (bs, gs, 1 or gs) list of 1 or multiple backtranslations
+        - bwd_prompts (list[str]): (bs * gs) flat list of backward prompts
+        - bwd_texts (list[list[str]]): (bs * gs, 1 or gs) list of 1 or multiple backtranslations
+        - backtranslations (list[list[list[str]]]): (bs, gs, 1 or gs) same as previous but not flattened
         - rewards (Tensor): (2, bs, gs) normalized float rewards
     """
     batch_size = len(english_sentences)
@@ -54,9 +56,9 @@ def generate_translations_and_rewards(
     if config.is_nllb:
         tokenizer.src_lang = config.language
         tokenizer.tgt_lang = "eng_Latn"
-    all_back_texts: list[list[list[str]]] = []  # [batch, g_fwd, g_bwd]
-    all_bwd_prompts = []  # flat list for loss computation
-    all_bwd_completions = []
+    all_bwd_prompts: list[str] = []  # (batch * g_fwd)
+    all_bwd_completions: list[list[list[str]]] = []  # (batch, g_fwd, g_bwd)
+    all_bwd_completions_flat: list[list[str]] = []  # (batch * g_fwd, g_bwd)
     for i in range(batch_size):
         if not config.grpo_greedy_backward:
             group_back: list[list[str]] = []
@@ -73,9 +75,9 @@ def generate_translations_and_rewards(
                     )
                 group_back.append(bwd_texts_ij[0])
                 all_bwd_prompts.extend([bwd_prompt] * config.grpo_num_backward)
-                all_bwd_completions.extend(bwd_texts_ij[0])
+                all_bwd_completions_flat.append(bwd_texts_ij[0])
                 log_mem(f"after_bwd_generation_i{i}_j{j}")
-            all_back_texts.append(group_back)
+            all_bwd_completions.append(group_back)
         else:
             # Greedy, just a single backtrans
             bwd_prompts = [
@@ -90,14 +92,14 @@ def generate_translations_and_rewards(
                 override_max_tokens=config.max_tokens * 2,
             )
             all_bwd_prompts.extend(bwd_prompts)
-            all_bwd_completions.extend(bwd_texts_i)
-            all_back_texts.append([[t] for t in bwd_texts_i])
+            all_bwd_completions_flat.append(bwd_texts_i)
+            all_bwd_completions.append([[t] for t in bwd_texts_i])
 
     # 3. Compute rewards
     forward_rewards, _ = compute_cycle_rewards(
         english_sentences,
         fwd_texts,
-        all_back_texts,
+        all_bwd_completions,
     )
     forward_rewards = forward_rewards.to(model.device)
 
@@ -105,7 +107,37 @@ def generate_translations_and_rewards(
     if config.is_nllb:
         tokenizer.src_lang = "eng_Latn"
         tokenizer.tgt_lang = config.language
-    return fwd_prompts, fwd_texts, all_back_texts, forward_rewards
+    return (
+        fwd_prompts,
+        fwd_texts,
+        all_bwd_prompts,
+        all_bwd_completions_flat,
+        all_bwd_completions,
+        forward_rewards,
+    )
+
+
+def compute_fwd_and_bwd_logprobs(
+    model: Any,
+    tokenizer: Any,
+    fwd_prompts: list[str],
+    fwd_completions: list[list[str]],
+    bwd_prompts: list[str],
+    bwd_completions: list[list[str]],
+    with_grad: bool,
+    config: ExperimentConfig,
+):
+    fwd_logprobs, fwd_mask = None, None
+    if config.alpha > 0:
+        fwd_logprobs, fwd_mask = compute_logprobs(
+            model, tokenizer, fwd_prompts, fwd_completions, with_grad, config
+        )
+    bwd_logprobs, bwd_mask = None, None
+    if config.alpha < 1:
+        bwd_logprobs, bwd_mask = compute_logprobs(
+            model, tokenizer, bwd_prompts, bwd_completions, with_grad, config
+        )
+    return fwd_logprobs, fwd_mask, bwd_logprobs, bwd_mask
 
 
 def compute_logprobs(
@@ -122,7 +154,6 @@ def compute_logprobs(
         - policy_logprobs: (bs * gs, seq) tensor of log probs
         - mask: (bs * gs, seq) mask for completion
     """
-    # TODO: Update for seq2seq
     flat_prompts = [p for p in prompts for _ in range(config.grpo_group_size)]
     flat_completions = [c for group in completions for c in group]
     full_texts = [p + " " + c for p, c in zip(flat_prompts, flat_completions)]

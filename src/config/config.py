@@ -22,6 +22,7 @@ class ExperimentConfig:
     eval_num_sentences: int | None = None
 
     # GRPO
+    alpha: float = 0  # alpha * fwd_loss + (1-alpha) * bwd_loss
     grpo_group_size: int = 4
     grpo_beta: float = 0.1
     grpo_temperature: float = 0.5
@@ -40,7 +41,7 @@ class ExperimentConfig:
     batch_size: int = 4
     grad_acc_steps: int = 4
     inner_update_steps: int = 2  # Number of "inner updates" per sample of rollouts
-    grad_norm: float = 1.0
+    grad_norm: float | None = None
     optimizer: str = "adamw"
     warmup_steps: int = 100
     eval_every_n_steps: int = 50

@@ -8,17 +8,17 @@ import os
 from collections import defaultdict
 
 import torch
-import wandb
 from torch.utils.data import DataLoader, DistributedSampler
 from tqdm import tqdm
 
+import wandb
 from src.config.config import ExperimentConfig
 from src.data import EvalDataset, FineWebTrainDataset, NLLBTrainDataset
 from src.distributed import DistributedConfig
 from src.evaluate import evaluate
 from src.modeling.grpo import (
+    compute_fwd_and_bwd_logprobs,
     compute_grpo_loss,
-    compute_logprobs,
     generate_translations_and_rewards,
 )
 from src.modeling.mem_profile import log_mem
@@ -111,13 +111,18 @@ def train(
         desc="Training",
         disable=not dist_config.is_main,
     )
-    accumulated_prompts: list[list[str]] = []
-    accumulated_completions: list[list[list[str]]] = []
-    accumulated_backtranslations: list[list[list[list[str]]]] = []
-    accumulated_rewards: list[torch.Tensor] = []
-    old_logprobs: list[torch.Tensor] = []
-    logprobs_mask: list[torch.Tensor] = []
-    ref_logprobs: list[torch.Tensor] = []
+    acc_fwd_prompts: list[list[str]] = []
+    acc_fwd_completions: list[list[list[str]]] = []
+    acc_bwd_prompts: list[list[str]] = []
+    acc_bwd_completions: list[list[list[str]]] = []  # Flattened
+    acc_backtranslations: list[list[list[list[str]]]] = []  # Not flattened
+    acc_rewards: list[torch.Tensor] = []
+    fwd_old_logprobs: list[torch.Tensor] = []  # Corresponds to acc_completions
+    fwd_logprobs_mask: list[torch.Tensor] = []
+    fwd_ref_logprobs: list[torch.Tensor] = []
+    bwd_old_logprobs: list[torch.Tensor] = []  # Corr. to acc_backtranslatons
+    bwd_logprobs_mask: list[torch.Tensor] = []
+    bwd_ref_logprobs: list[torch.Tensor] = []
 
     with torch.amp.autocast_mode.autocast(
         dist_config.device_type, dtype=torch.bfloat16
@@ -131,79 +136,121 @@ def train(
 
             for batch_idx, english_sentences in enumerate(train_loader):
                 # 1. Generate rollouts
-                prompts, completions, backtranslations, rewards = (
-                    generate_translations_and_rewards(
-                        model, tokenizer, english_sentences, config
-                    )
+                (
+                    fwd_prompts,
+                    fwd_completions,
+                    bwd_prompts,
+                    bwd_completions,
+                    backtranslations,
+                    rewards,
+                ) = generate_translations_and_rewards(
+                    model, tokenizer, english_sentences, config
                 )
-                accumulated_prompts.append(prompts)
-                accumulated_completions.append(completions)
-                accumulated_backtranslations.append(backtranslations)
-                accumulated_rewards.append(rewards)
+                acc_fwd_prompts.append(fwd_prompts)
+                acc_fwd_completions.append(fwd_completions)
+                acc_bwd_prompts.append(bwd_prompts)
+                acc_bwd_completions.append(bwd_completions)
+                acc_backtranslations.append(backtranslations)
+                acc_rewards.append(rewards)
 
                 # 2. Compute old log probs
-                old_lps, mask = compute_logprobs(
-                    model,
-                    tokenizer,
-                    prompts,
-                    completions,
-                    with_grad=False,
-                    config=config,
+                fwd_old_lps, fwd_mask, bwd_old_lps, bwd_mask = (
+                    compute_fwd_and_bwd_logprobs(
+                        model,
+                        tokenizer,
+                        fwd_prompts,
+                        fwd_completions,
+                        bwd_prompts,
+                        bwd_completions,
+                        with_grad=False,
+                        config=config,
+                    )
                 )
-                old_logprobs.append(old_lps)
-                logprobs_mask.append(mask)
+                if fwd_old_lps is not None and fwd_mask is not None:
+                    fwd_old_logprobs.append(fwd_old_lps)
+                    fwd_logprobs_mask.append(fwd_mask)
+                if bwd_old_lps is not None and bwd_mask is not None:
+                    bwd_old_logprobs.append(bwd_old_lps)
+                    bwd_logprobs_mask.append(bwd_mask)
 
                 # 3. Compute ref log probs
-                ref_lps, _ = compute_logprobs(
+                fwd_ref_lps, _, bwd_ref_lps, _ = compute_fwd_and_bwd_logprobs(
                     ref_model,
                     tokenizer,
-                    prompts,
-                    completions,
+                    fwd_prompts,
+                    fwd_completions,
+                    bwd_prompts,
+                    bwd_completions,
                     with_grad=False,
                     config=config,
                 )
-                ref_logprobs.append(ref_lps)
+                if fwd_ref_lps is not None:
+                    fwd_ref_logprobs.append(fwd_ref_lps)
+                if bwd_ref_lps is not None:
+                    bwd_ref_logprobs.append(bwd_ref_lps)
 
                 # 3. Optimizer step every grad_acc steps
                 if (num_batch_rollouts + 1) % config.grad_acc_steps == 0:
                     for inner_step_idx in range(config.inner_update_steps):
-                        mean_kl_div = 0.0
+                        fwd_mean_kl_div = 0.0
+                        bwd_mean_kl_div = 0.0
+                        fwd_step_loss = 0.0
+                        bwd_step_loss = 0.0
                         mean_bleu_reward = 0.0
                         mean_chrf_reward = 0.0
-                        step_loss = 0.0
 
                         for inner_batch_idx in range(config.grad_acc_steps):
-                            rewards = accumulated_rewards[inner_batch_idx]
-                            policy_lps, _ = compute_logprobs(
-                                model,
-                                tokenizer,
-                                accumulated_prompts[inner_batch_idx],
-                                accumulated_completions[inner_batch_idx],
-                                with_grad=True,
-                                config=config,
+                            rewards = acc_rewards[inner_batch_idx]
+                            fwd_policy_lps, _, bwd_policy_lps, _ = (
+                                compute_fwd_and_bwd_logprobs(
+                                    model,
+                                    tokenizer,
+                                    acc_fwd_prompts[inner_batch_idx],
+                                    acc_fwd_completions[inner_batch_idx],
+                                    acc_bwd_prompts[inner_batch_idx],
+                                    acc_bwd_completions[inner_batch_idx],
+                                    with_grad=True,
+                                    config=config,
+                                )
                             )
-                            loss, kl_div = compute_grpo_loss(
-                                policy_logprobs=policy_lps,
-                                old_logprobs=old_logprobs[inner_batch_idx],
-                                ref_logprobs=ref_logprobs[inner_batch_idx],
-                                mask=logprobs_mask[inner_batch_idx],
-                                rewards=rewards,
-                                config=config,
-                            )
-                            loss /= config.grad_acc_steps
-                            log_mem("after_fwd_loss")
-                            loss.backward()
-
-                            # Track metrics
-                            mean_kl_div += kl_div.mean().item()
+                            if fwd_policy_lps is not None:
+                                loss, kl_div = compute_grpo_loss(
+                                    policy_logprobs=fwd_policy_lps,
+                                    old_logprobs=fwd_old_logprobs[inner_batch_idx],
+                                    ref_logprobs=fwd_ref_logprobs[inner_batch_idx],
+                                    mask=fwd_logprobs_mask[inner_batch_idx],
+                                    rewards=rewards,
+                                    config=config,
+                                )
+                                loss /= config.grad_acc_steps
+                                loss *= config.alpha
+                                log_mem("after_fwd_loss")
+                                loss.backward()
+                                fwd_mean_kl_div += kl_div.mean().item()
+                                fwd_step_loss += loss.detach().item()
+                            if bwd_policy_lps is not None:
+                                loss, kl_div = compute_grpo_loss(
+                                    policy_logprobs=bwd_policy_lps,
+                                    old_logprobs=bwd_old_logprobs[inner_batch_idx],
+                                    ref_logprobs=bwd_ref_logprobs[inner_batch_idx],
+                                    mask=bwd_logprobs_mask[inner_batch_idx],
+                                    rewards=rewards,
+                                    config=config,
+                                )
+                                loss /= config.grad_acc_steps
+                                loss *= 1 - config.alpha
+                                log_mem("after_fwd_loss")
+                                loss.backward()
+                                bwd_mean_kl_div += kl_div.mean().item()
+                                bwd_step_loss += loss.detach().item()
                             mean_bleu_reward += rewards[0].mean().item()
                             mean_chrf_reward += rewards[1].mean().item()
-                            step_loss += loss.detach().item()
 
                         unclipped_grad_norm = grad_norm(model)
-                        torch.nn.utils.clip_grad_norm_(
-                            model.parameters(), config.grad_norm
-                        )
+                        if config.grad_norm is not None:
+                            torch.nn.utils.clip_grad_norm_(
+                                model.parameters(), config.grad_norm
+                            )
                         optimizer.step()
                         scheduler.step()
                         optimizer.zero_grad()
@@ -211,8 +258,6 @@ def train(
                         # Logging results
                         mean_bleu_reward /= config.grad_acc_steps
                         mean_chrf_reward /= config.grad_acc_steps
-                        epoch_metrics["loss"] += step_loss / config.grad_acc_steps
-                        epoch_metrics["kl_div"] += mean_kl_div / config.grad_acc_steps
                         epoch_metrics["reward_bleu"] += mean_bleu_reward
                         epoch_metrics["reward_chrf"] += mean_chrf_reward
                         if dist_config.is_main:
@@ -221,8 +266,12 @@ def train(
                                     "lr": scheduler.get_last_lr()[0],
                                     "grad_norm": unclipped_grad_norm,
                                     "epoch": epoch + 1,
-                                    "loss": step_loss / config.grad_acc_steps,
-                                    "kl_div": mean_kl_div / config.grad_acc_steps,
+                                    "fwd_loss": fwd_step_loss,
+                                    "bwd_loss": bwd_step_loss,
+                                    "fwd_kl_div": fwd_mean_kl_div
+                                    / config.grad_acc_steps,
+                                    "bwd_kl_div": bwd_mean_kl_div
+                                    / config.grad_acc_steps,
                                     "reward_bleu": mean_bleu_reward,
                                     "reward_chrf": mean_chrf_reward,
                                     "inner_step_idx": inner_step_idx,
@@ -235,10 +284,10 @@ def train(
                                 == 0
                             ):
                                 table = build_wandb_table(
-                                    accumulated_prompts,
-                                    accumulated_completions,
-                                    accumulated_backtranslations,
-                                    accumulated_rewards,
+                                    acc_fwd_prompts,
+                                    acc_fwd_completions,
+                                    acc_backtranslations,
+                                    acc_rewards,
                                 )
                                 train_log["train/examples"] = table  # type:ignore
                             wandb.log(train_log, step=num_optimizer_steps)
@@ -265,13 +314,13 @@ def train(
                             model.train()
 
                     # Reset accumulators
-                    accumulated_prompts = []
-                    accumulated_completions = []
-                    accumulated_backtranslations = []
-                    accumulated_rewards = []
-                    old_logprobs = []
-                    logprobs_mask = []
-                    ref_logprobs = []
+                    acc_fwd_prompts = []
+                    acc_fwd_completions = []
+                    acc_bwd_completions = []
+                    acc_rewards = []
+                    fwd_old_logprobs = []
+                    fwd_logprobs_mask = []
+                    fwd_ref_logprobs = []
 
                     if (
                         config.reference_update_steps > 0
