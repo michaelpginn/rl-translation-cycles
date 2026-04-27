@@ -154,7 +154,8 @@ def compute_logprobs(
         - policy_logprobs: (bs * gs, seq) tensor of log probs
         - mask: (bs * gs, seq) mask for completion
     """
-    flat_prompts = [p for p in prompts for _ in range(config.grpo_group_size)]
+    num_completions = len(completions[0])
+    flat_prompts = [p for p in prompts for _ in range(num_completions)]
     flat_completions = [c for group in completions for c in group]
     full_texts = [p + " " + c for p, c in zip(flat_prompts, flat_completions)]
     if config.model_type == "decoder":

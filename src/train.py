@@ -191,6 +191,7 @@ def train(
 
                 # 3. Optimizer step every grad_acc steps
                 if (num_batch_rollouts + 1) % config.grad_acc_steps == 0:
+                    # Inner step - can perform multiple gradient steps without new rollouts
                     for inner_step_idx in range(config.inner_update_steps):
                         fwd_mean_kl_div = 0.0
                         bwd_mean_kl_div = 0.0
@@ -316,11 +317,16 @@ def train(
                     # Reset accumulators
                     acc_fwd_prompts = []
                     acc_fwd_completions = []
+                    acc_bwd_prompts = []
                     acc_bwd_completions = []
+                    acc_backtranslations = []
                     acc_rewards = []
                     fwd_old_logprobs = []
                     fwd_logprobs_mask = []
                     fwd_ref_logprobs = []
+                    bwd_old_logprobs = []
+                    bwd_logprobs_mask = []
+                    bwd_ref_logprobs = []
 
                     if (
                         config.reference_update_steps > 0
