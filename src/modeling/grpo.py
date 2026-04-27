@@ -129,11 +129,17 @@ def compute_fwd_and_bwd_logprobs(
 ):
     fwd_logprobs, fwd_mask = None, None
     if config.alpha > 0:
+        if config.is_nllb:
+            tokenizer.src_lang = "eng_Latn"
+            tokenizer.tgt_lang = config.language
         fwd_logprobs, fwd_mask = compute_logprobs(
             model, tokenizer, fwd_prompts, fwd_completions, with_grad, config
         )
     bwd_logprobs, bwd_mask = None, None
     if config.alpha < 1:
+        if config.is_nllb:
+            tokenizer.tgt_lang = config.language
+            tokenizer.src_lang = "eng_Latn"
         bwd_logprobs, bwd_mask = compute_logprobs(
             model, tokenizer, bwd_prompts, bwd_completions, with_grad, config
         )
@@ -250,7 +256,7 @@ def compute_grpo_loss(
     pg_loss_term = torch.minimum(pg_loss_term, clipped_pg)
 
     # Compute kl divergence (second term)
-    log_ref_ratio = policy_logprobs - ref_logprobs
+    log_ref_ratio = ref_logprobs - policy_logprobs
     kl_divergence = torch.exp(log_ref_ratio) - log_ref_ratio - 1
     if config.grpo_beta > 0:
         token_level_loss = -(pg_loss_term - config.grpo_beta * kl_divergence)
