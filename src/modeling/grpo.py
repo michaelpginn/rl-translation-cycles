@@ -30,7 +30,7 @@ def generate_translations_and_rewards(
         - bwd_prompts (list[str]): (bs * gs) flat list of backward prompts
         - bwd_texts (list[list[str]]): (bs * gs, 1 or gs) list of 1 or multiple backtranslations
         - backtranslations (list[list[list[str]]]): (bs, gs, 1 or gs) same as previous but not flattened
-        - rewards (Tensor): (2, bs, gs) normalized float rewards
+        - rewards (Tensor): (2, bs, gs, num_back) normalized float rewards
     """
     batch_size = len(english_sentences)
 
@@ -96,12 +96,12 @@ def generate_translations_and_rewards(
             all_bwd_completions.append([[t] for t in bwd_texts_i])
 
     # 3. Compute rewards
-    forward_rewards, _ = compute_cycle_rewards(
+    _, backward_rewards = compute_cycle_rewards(
         english_sentences,
         fwd_texts,
         all_bwd_completions,
     )
-    forward_rewards = forward_rewards.to(model.device)
+    backward_rewards = backward_rewards.to(model.device)
 
     # Reset tokenizer since we'll use it for lps next
     if config.is_nllb:
@@ -113,7 +113,7 @@ def generate_translations_and_rewards(
         all_bwd_prompts,
         all_bwd_completions_flat,
         all_bwd_completions,
-        forward_rewards,
+        backward_rewards,
     )
 
 

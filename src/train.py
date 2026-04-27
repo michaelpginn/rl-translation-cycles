@@ -220,7 +220,7 @@ def train(
                                     old_logprobs=fwd_old_logprobs[inner_batch_idx],
                                     ref_logprobs=fwd_ref_logprobs[inner_batch_idx],
                                     mask=fwd_logprobs_mask[inner_batch_idx],
-                                    rewards=rewards,
+                                    rewards=rewards.mean(dim=-1),  # mean over bwds
                                     config=config,
                                 )
                                 loss /= config.grad_acc_steps
@@ -390,13 +390,13 @@ def build_wandb_table(
         acc_prompts:     (num_batches, batch_size)
         acc_completions: (num_batches, batch_size, group_size)
         acc_completions: (num_batches, batch_size, group_size, 1 | group_size)
-        acc_rewards:     (num_batches, 2, batch_size, group_size)
+        acc_rewards:     (num_batches, 2, batch_size, group_size, num_bwd)
     """
     example_outputs: list[list[str | int | float]] = []
     flattened_prompts = [p for batch in acc_prompts for p in batch]
     flattened_completions = [c for batch in acc_completions for c in batch]
     flattened_backtranslations = [b for batch in acc_backtranslations for b in batch]
-    flattened_rewards = torch.concat(acc_rewards, dim=1)
+    flattened_rewards = torch.concat(acc_rewards, dim=1).mean(dim=-1)
     for prompt_idx in range(min(5, len(flattened_prompts))):
         for compl_idx in range(len(flattened_completions[0])):
             bleu: float = flattened_rewards[0][prompt_idx][compl_idx].item()
