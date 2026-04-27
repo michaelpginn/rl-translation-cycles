@@ -138,8 +138,8 @@ def compute_fwd_and_bwd_logprobs(
     bwd_logprobs, bwd_mask = None, None
     if config.alpha < 1:
         if config.is_nllb:
-            tokenizer.tgt_lang = config.language
-            tokenizer.src_lang = "eng_Latn"
+            tokenizer.src_lang = config.language
+            tokenizer.tgt_lang = "eng_Latn"
         bwd_logprobs, bwd_mask = compute_logprobs(
             model, tokenizer, bwd_prompts, bwd_completions, with_grad, config
         )
