@@ -74,7 +74,7 @@ def generate_translations_and_rewards(
                         config=config,
                     )
                 group_back.append(bwd_texts_ij[0])
-                all_bwd_prompts.extend([bwd_prompt] * config.grpo_num_backward)
+                all_bwd_prompts.append(bwd_prompt)
                 all_bwd_completions_flat.append(bwd_texts_ij[0])
                 log_mem(f"after_bwd_generation_i{i}_j{j}")
             all_bwd_completions.append(group_back)
