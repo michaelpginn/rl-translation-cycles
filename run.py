@@ -8,6 +8,8 @@ import random
 from typing import Any
 
 import torch
+from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer
+
 import wandb
 from src.config import ExperimentConfig, config_to_dataclass
 from src.data import FloresEvalDataset, NLLBEvalDataset
@@ -15,7 +17,6 @@ from src.distributed import cleanup_distributed, setup_distributed
 from src.evaluate import evaluate
 from src.evaluate_correlation import evaluate_correlation
 from src.train import train
-from transformers import AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoTokenizer
 
 
 def main() -> None:
@@ -83,13 +84,13 @@ def main() -> None:
         if config.model_type == "decoder":
             model: Any = AutoModelForCausalLM.from_pretrained(
                 config.pretrained_model,
-                dtype=torch.bfloat16,
+                # dtype=torch.bfloat16,
                 attn_implementation=attn_impl,
             )
         elif config.model_type == "seq2seq":
             model: Any = AutoModelForSeq2SeqLM.from_pretrained(
                 config.pretrained_model,
-                dtype=torch.bfloat16,
+                # dtype=torch.bfloat16,
                 attn_implementation=attn_impl,
             )
         else:
